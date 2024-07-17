@@ -1,12 +1,3 @@
-// smolhttpd Copyright (C) 2024 kernaltrap8
-// This program comes with ABSOLUTELY NO WARRANTY
-// This is free software, and you are welcome to redistribute it
-// under certain conditions
-
-/*
-  smolhttpd.cpp
-*/
-
 #include "smolhttpd.hpp"
 #include <algorithm>
 #include <arpa/inet.h>
@@ -25,7 +16,11 @@
 #include <vector>
 
 namespace smolhttpd {
-
+volatile sig_atomic_t exitFlag = 0;
+bool debugMode = false;
+const std::string RED = "\033[31m";
+const std::string GREEN = "\033[32m";
+const std::string RESET = "\033[0m";
 // Struct to hold data for argument parsing
 struct Argument {
   std::string flag;
@@ -59,21 +54,40 @@ std::unordered_map<std::string, std::string> ParseArguments(int argc,
 }
 
 void PrintCurrentOperation(const std::string operation) {
-  std::cout << "[SERVER] " << operation << std::endl;
+  std::cout << "[" << GREEN << "SERVER" << RESET
+            << "]"
+               " "
+            << operation << std::endl;
 }
 
 void LogRequest(const std::string &ipAddress, const std::string &requestTime,
                 const std::string &method, const std::string &requestPath,
-                const std::string &httpVersion, int statusCode) {
+                const std::string &httpVersion, int statusCode,
+                const std::string &request) {
   std::cout << ipAddress << " - - [" << requestTime << "] \"" << method << " "
             << requestPath << " " << httpVersion << "\" " << statusCode
             << std::endl;
+  if (debugMode) {
+    std::cerr << "[" << RED << "DEBUG" << RESET
+              << "]"
+                 " Request: "
+              << request << std::endl;
+  }
+}
+
+void LogResponse(const std::string &response) {
+  if (debugMode) {
+    std::cerr << "[" << RED << "DEBUG" << RESET
+              << "]"
+                 " Response: "
+              << response << std::endl;
+  }
 }
 
 void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
                            const std::string &requestPath, int portNumber) {
   std::stringstream response;
-  response << "HTTP/1.1 200 OK\r\n";
+  response << "HTTP/1.1 " << GREEN << "200 OK\r\n" << RESET;
   response << "Content-Type: text/html\r\n\r\n";
   response << "<html><head><title>Directory Listing</title></head><body "
               "style=\"background-color: #ffffff;\">\r\n";
@@ -84,7 +98,7 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
 
   // Add parent directory link
   if (requestPath != "/") {
-    response << "<li><a href=\"../\">Parent Directory</a></li>\r\n";
+    response << "<li><a href=\"../\">../</a></li>\r\n";
   }
 
   // Read directory contents
@@ -111,8 +125,11 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
            << portNumber << "</div>\r\n";
   response << "</body></html>\r\n";
 
-  send(ClientSocket, response.str().c_str(), response.str().length(), 0);
+  std::string responseStr = response.str();
+  send(ClientSocket, responseStr.c_str(), responseStr.length(), 0);
   close(ClientSocket);
+
+  LogResponse(responseStr);
 }
 
 std::string GetLinuxDistribution() {
@@ -176,77 +193,94 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
   // Handle serving files
   std::string basePath = ".";
   std::string filePath = basePath + requestPath;
-  if (requestPath == "/" || requestPath == "/index.html") {
-    filePath = basePath + "/index.html";
-  }
+  struct stat pathStat;
+  stat(filePath.c_str(), &pathStat);
 
-  std::ifstream fileStream(filePath, std::ios::in | std::ios::binary);
-  if (!fileStream.is_open()) {
-    statusCode = 404; // Not Found
-    fileStream.close();
-
-    // Check if directory and serve listing
+  if (S_ISDIR(pathStat.st_mode)) {
+    // Serve directory listing
     if (requestPath.back() != '/') {
       requestPath += '/';
     }
-
     std::string directoryPath = basePath + requestPath;
     ServeDirectoryListing(ClientSocket, directoryPath, requestPath, portNumber);
     return;
-  }
-
-  // Log the request
-  LogRequest(clientIP, requestTime, method, requestPath, httpVersion,
-             statusCode);
-
-  // Prepare response based on status code and content of file
-  std::stringstream response;
-  response << "HTTP/1.1 ";
-  switch (statusCode) {
-  case 200:
-    response << "200 OK\r\n";
-    break;
-  case 404:
-    response << "404 Not Found\r\n";
-    break;
-  default:
-    response << "500 Internal Server Error\r\n";
-  }
-
-  // Determine Content-Type
-  std::string contentType;
-  if (filePath.find(".html") != std::string::npos) {
-    contentType = "text/html";
-  } else if (filePath.find(".txt") != std::string::npos) {
-    contentType = "text/plain";
-  } else if (filePath.find(".jpg") != std::string::npos ||
-             filePath.find(".jpeg") != std::string::npos) {
-    contentType = "image/jpeg";
-  } else if (filePath.find(".png") != std::string::npos) {
-    contentType = "image/png";
   } else {
-    contentType = "application/octet-stream"; // Default
+    // Serve file content
+    std::ifstream fileStream(filePath, std::ios::in | std::ios::binary);
+    if (!fileStream.is_open()) {
+      statusCode = 404; // Not Found
+      fileStream.close();
+      ServeDirectoryListing(ClientSocket, basePath + "/", "/", portNumber);
+      return;
+    }
+
+    // Log the request
+    LogRequest(clientIP, requestTime, method, requestPath, httpVersion,
+               statusCode, request);
+
+    // Prepare response based on status code and content of file
+    std::stringstream response;
+    response << "HTTP/1.1 ";
+    switch (statusCode) {
+    case 100:
+      response << "100 Continue\r\n";
+      break;
+    case 101:
+      response << "101 Switching Protocols\r\n";
+      break;
+    case 200:
+      response << "200 OK\r\n";
+      break;
+    case 404:
+      response << "404 Not Found\r\n";
+      break;
+    default:
+      response << "500 Internal Server Error\r\n";
+    }
+
+    // Determine Content-Type
+    std::string contentType;
+    bool isTextOrHtml = false;
+    if (filePath.find(".html") != std::string::npos) {
+      contentType = "text/html";
+      isTextOrHtml = true;
+    } else if (filePath.find(".txt") != std::string::npos) {
+      contentType = "text/plain";
+      isTextOrHtml = true;
+    } else if (filePath.find(".jpg") != std::string::npos ||
+               filePath.find(".jpeg") != std::string::npos) {
+      contentType = "image/jpeg";
+    } else if (filePath.find(".png") != std::string::npos) {
+      contentType = "image/png";
+    } else {
+      contentType = "application/octet-stream"; // Default
+    }
+
+    // Read file content into response
+    std::stringstream fileContent;
+    fileContent << fileStream.rdbuf();
+    fileStream.close();
+
+    response << "Content-Type: " << contentType << "\r\n";
+    response << "Content-Length: " << fileContent.str().length() << "\r\n";
+    if (!isTextOrHtml) {
+      response << "Content-Disposition: attachment; filename=\""
+               << requestPath.substr(requestPath.find_last_of("/") + 1)
+               << "\"\r\n";
+    }
+    response << "\r\n";
+    response << fileContent.str();
+
+    // Send response
+    std::string responseStr = response.str();
+    send(ClientSocket, responseStr.c_str(), responseStr.length(), 0);
+    close(ClientSocket);
+
+    LogResponse(responseStr);
   }
-
-  // Read file content into response
-  std::stringstream fileContent;
-  fileContent << fileStream.rdbuf();
-  fileStream.close();
-
-  response << "Content-Type: " << contentType << "\r\n";
-  response << "Content-Length: " << fileContent.str().length() << "\r\n";
-  response << "\r\n";
-  response << fileContent.str();
-
-  // Send response
-  send(ClientSocket, response.str().c_str(), response.str().length(), 0);
-  close(ClientSocket);
 }
 
 int BindToClientSocket(int SocketToBind) {
-  // Global variable for exit flag
-  volatile sig_atomic_t exitFlag = 0;
-
   int ServerSocket = socket(AF_INET, SOCK_STREAM, 0);
   if (ServerSocket == 0) {
     std::cerr << "Failed to initialize socket. Exiting.\n";
@@ -303,7 +337,6 @@ int BindToClientSocket(int SocketToBind) {
 } // namespace smolhttpd
 
 // Global variable for exit flag
-volatile sig_atomic_t exitFlag = 0;
 
 // Signal handler function
 void signalHandler(int signum) {
@@ -312,7 +345,7 @@ void signalHandler(int signum) {
       "Exiting. (Signal: " + std::to_string(signum) + ")";
   smolhttpd::PrintCurrentOperation(ExitingServerString);
   // Set exit flag to terminate server gracefully
-  exitFlag = 1;
+  smolhttpd::exitFlag = 1;
   exit(1);
 }
 
@@ -333,6 +366,10 @@ int main(int argc, char *argv[]) {
   if (arguments.count("port") == 0) {
     std::cerr << "Please specify port to bind on using -port <port_number>\n";
     return 1;
+  }
+
+  if (arguments.count("d") > 0 || arguments.count("debug") > 0) {
+    smolhttpd::debugMode = true;
   }
 
   int portNumber = std::atoi(arguments["port"].c_str());

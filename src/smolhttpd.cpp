@@ -1,3 +1,12 @@
+// smolhttpd Copyright (C) 2024 kernaltrap8
+// This program comes with ABSOLUTELY NO WARRANTY
+// This is free software, and you are welcome to redistribute it
+// under certain conditions
+
+/*
+  smolhttpd.cpp
+*/
+
 #include "smolhttpd.hpp"
 #include <algorithm>
 #include <arpa/inet.h>
@@ -7,6 +16,8 @@
 #include <dirent.h>
 #include <fstream>
 #include <iostream>
+#include <openssl/err.h>
+#include <openssl/ssl.h>
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
@@ -18,9 +29,13 @@
 namespace smolhttpd {
 volatile sig_atomic_t exitFlag = 0;
 bool debugMode = false;
+bool sslEnabled = false; // Flag to check if SSL is enabled
+std::string sslCertPath; // Path to SSL certificate
+
 const std::string RED = "\033[31m";
 const std::string GREEN = "\033[32m";
 const std::string RESET = "\033[0m";
+
 // Struct to hold data for argument parsing
 struct Argument {
   std::string flag;
@@ -54,10 +69,8 @@ std::unordered_map<std::string, std::string> ParseArguments(int argc,
 }
 
 void PrintCurrentOperation(const std::string operation) {
-  std::cout << "[" << GREEN << "SERVER" << RESET
-            << "]"
-               " "
-            << operation << std::endl;
+  std::cout << "[" << GREEN << "SERVER" << RESET << "] " << operation
+            << std::endl;
 }
 
 void LogRequest(const std::string &ipAddress, const std::string &requestTime,
@@ -68,26 +81,22 @@ void LogRequest(const std::string &ipAddress, const std::string &requestTime,
             << requestPath << " " << httpVersion << "\" " << statusCode
             << std::endl;
   if (debugMode) {
-    std::cerr << "[" << RED << "DEBUG" << RESET
-              << "]"
-                 " Request: "
-              << request << std::endl;
+    std::cerr << "[" << RED << "DEBUG" << RESET << "] Request: " << request
+              << std::endl;
   }
 }
 
 void LogResponse(const std::string &response) {
   if (debugMode) {
-    std::cerr << "[" << RED << "DEBUG" << RESET
-              << "]"
-                 " Response: "
-              << response << std::endl;
+    std::cerr << "[" << RED << "DEBUG" << RESET << "] Response: " << response
+              << std::endl;
   }
 }
 
 void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
                            const std::string &requestPath, int portNumber) {
   std::stringstream response;
-  response << "HTTP/1.1 " << GREEN << "200 OK\r\n" << RESET;
+  response << "HTTP/1.1 200 OK\r\n";
   response << "Content-Type: text/html\r\n\r\n";
   response << "<html><head><title>Directory Listing</title></head><body "
               "style=\"background-color: #ffffff;\">\r\n";
@@ -319,8 +328,26 @@ int BindToClientSocket(int SocketToBind) {
       std::cerr << "Client socket accept failed.\n";
       return 1;
     }
-    HttpdServerThread_t.emplace_back(smolhttpd::HandleClientRequest,
-                                     ClientSocket, SocketToBind);
+
+    if (sslEnabled) {
+      // Handle SSL connection
+      SSL_CTX *sslContext = SSL_CTX_new(SSLv23_server_method());
+      SSL *ssl = SSL_new(sslContext);
+      SSL_set_fd(ssl, ClientSocket);
+      if (SSL_accept(ssl) <= 0) {
+        ERR_print_errors_fp(stderr);
+        close(ClientSocket);
+        continue;
+      }
+      // Handle SSL connection using ssl object
+      // Example: SSL_read(ssl, ...), SSL_write(ssl, ...)
+      HttpdServerThread_t.emplace_back(HandleClientRequest, SSL_get_fd(ssl),
+                                       SocketToBind);
+    } else {
+      // Handle non-SSL connection
+      HttpdServerThread_t.emplace_back(HandleClientRequest, ClientSocket,
+                                       SocketToBind);
+    }
   }
 
   // Join all threads before exiting
@@ -336,8 +363,6 @@ int BindToClientSocket(int SocketToBind) {
 
 } // namespace smolhttpd
 
-// Global variable for exit flag
-
 // Signal handler function
 void signalHandler(int signum) {
   std::cout << "\n";
@@ -350,13 +375,31 @@ void signalHandler(int signum) {
 }
 
 int main(int argc, char *argv[]) {
-  if (argc < 2) {
-    std::cerr << "Please specify port to bind on.\n";
-    return 1;
-  }
 
   std::unordered_map<std::string, std::string> arguments =
       smolhttpd::ParseArguments(argc, argv);
+  if (arguments.count("h") > 0 || arguments.count("help") > 0) {
+    std::cout << "smolhttpd - A small HTTP server\n"
+              << "Usage: smolhttpd -port <port_number> [-ssl <ssl_cert_path>] "
+                 "[-d]\n\n"
+              << "Options:\n"
+              << "  -port <port_number>   Specify the port number to bind on\n"
+              << "  -ssl <ssl_cert_path>  Enable SSL/TLS support and specify "
+                 "SSL certificate path\n"
+              << "  -d, --debug           Enable debug mode\n"
+              << "  -v, --version         Display version information\n"
+              << "  -h, --help            Display this help message\n\n"
+              << "Examples:\n"
+              << "  smolhttpd -port 8080\n"
+              << "  smolhttpd -port 8443 -ssl /path/to/ssl/certificate.pem\n"
+              << "  smolhttpd -port 8000 -d\n\n";
+    exit(0);
+  }
+
+  if (argc < 2) {
+    std::cerr << "Please specify port to bind on.\n";
+    exit(1);
+  }
 
   if (arguments.count("v") > 0 || arguments.count("version") > 0) {
     std::cout << "smolhttpd v" << VERSION << std::endl;
@@ -365,11 +408,19 @@ int main(int argc, char *argv[]) {
 
   if (arguments.count("port") == 0) {
     std::cerr << "Please specify port to bind on using -port <port_number>\n";
-    return 1;
+    exit(1);
   }
 
   if (arguments.count("d") > 0 || arguments.count("debug") > 0) {
     smolhttpd::debugMode = true;
+  }
+
+  if (arguments.count("ssl") > 0) {
+    smolhttpd::PrintCurrentOperation("Enabling SSL support.");
+    smolhttpd::sslEnabled = true;
+    smolhttpd::sslCertPath = arguments["ssl"];
+    SSL_load_error_strings();
+    SSL_library_init();
   }
 
   int portNumber = std::atoi(arguments["port"].c_str());

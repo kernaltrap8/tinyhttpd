@@ -12,7 +12,7 @@
 
 #include <string>
 
-#define VERSION "0.9.2"
+#define VERSION "0.9.4"
 
 namespace smolhttpd {
 

@@ -3,7 +3,7 @@
 
 #include <string>
 
-#define VERSION "0.8.2"
+#define VERSION "0.8.4"
 
 namespace smolhttpd {
 

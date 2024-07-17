@@ -1,7 +1,7 @@
 #include "smolhttpd.hpp"
 #include <algorithm>
 #include <arpa/inet.h>
-#include <csignal> // For signal handling
+#include <csignal>
 #include <cstring>
 #include <ctime>
 #include <dirent.h>
@@ -12,9 +12,42 @@
 #include <sys/stat.h>
 #include <thread>
 #include <unistd.h>
+#include <unordered_map>
 #include <vector>
 
 namespace smolhttpd {
+
+// Struct to hold data for argument parsing
+struct Argument {
+  std::string flag;
+  std::string value;
+};
+
+// Function to parse argument data from Argument stuct
+std::unordered_map<std::string, std::string> ParseArguments(int argc,
+                                                            char *argv[]) {
+  std::unordered_map<std::string, std::string> arguments;
+
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+
+    if (arg.size() > 1 && arg[0] == '-') {
+      // Remove leading dash
+      arg.erase(0, 1);
+
+      // Check if there's an associated value
+      std::string value;
+      if (i + 1 < argc && argv[i + 1][0] != '-') {
+        value = argv[++i];
+      }
+
+      // Store flag and value pair
+      arguments[arg] = value;
+    }
+  }
+
+  return arguments;
+}
 
 void PrintCurrentOperation(const std::string operation) {
   std::cout << "[SERVER] " << operation << std::endl;
@@ -280,12 +313,20 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  if (!strcmp(argv[1], "-V")) {
+  std::unordered_map<std::string, std::string> arguments =
+      smolhttpd::ParseArguments(argc, argv);
+
+  if (arguments.count("v") > 0 || arguments.count("version") > 0) {
     std::cout << "smolhttpd v" << VERSION << std::endl;
-    return 0;
+    exit(0);
   }
 
-  int portNumber = std::stoi(argv[1]);
+  if (arguments.count("port") == 0) {
+    std::cerr << "Please specify port to bind on using -port <port_number>\n";
+    return 1;
+  }
+
+  int portNumber = std::atoi(arguments["port"].c_str());
 
   // Register signal SIGINT and signal handler
   signal(SIGINT, signalHandler);

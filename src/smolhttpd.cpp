@@ -66,7 +66,7 @@ void LogRequest(const std::string &ipAddress, const std::string &requestTime,
                 const std::string &method, const std::string &requestPath,
                 const std::string &httpVersion, int statusCode) {
   std::cout << ipAddress << " - - [" << requestTime << "] \"" << method << " "
-            << requestPath << " HTTP/" << httpVersion << "\" " << statusCode
+            << requestPath << " " << httpVersion << "\" " << statusCode
             << std::endl;
 }
 

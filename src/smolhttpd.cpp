@@ -1,3 +1,12 @@
+// smolhttpd Copyright (C) 2024 kernaltrap8
+// This program comes with ABSOLUTELY NO WARRANTY
+// This is free software, and you are welcome to redistribute it
+// under certain conditions
+
+/*
+  smolhttpd.cpp
+*/
+
 #include "smolhttpd.hpp"
 #include <algorithm>
 #include <arpa/inet.h>

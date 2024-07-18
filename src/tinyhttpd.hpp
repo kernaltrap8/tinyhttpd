@@ -12,7 +12,7 @@
 
 #include <string>
 
-#define VERSION "0.10"
+#define VERSION "0.10.2"
 
 namespace tinyhttpd {
 

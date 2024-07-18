@@ -94,34 +94,28 @@ void LogResponse(const std::string &response) {
   }
 }
 
+std::string UrlDecode(const std::string &str) {
+  std::string result;
+  char decodeBuf[3] = {0};
+  for (size_t i = 0; i < str.length(); ++i) {
+    if (str[i] == '%') {
+      if (i + 2 < str.length()) {
+        decodeBuf[0] = str[i + 1];
+        decodeBuf[1] = str[i + 2];
+        result += static_cast<char>(strtol(decodeBuf, nullptr, 16));
+        i += 2;
+      }
+    } else if (str[i] == '+') {
+      result += ' ';
+    } else {
+      result += str[i];
+    }
+  }
+  return result;
+}
+
 void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
                            const std::string &requestPath, int portNumber) {
-  struct stat dirStat;
-  if (stat(directoryPath.c_str(), &dirStat) != 0) {
-    // Error accessing directory
-    std::string response = "HTTP/1.1 403 Forbidden\r\n";
-    response += "Content-Type: text/html\r\n\r\n";
-    response +=
-        "<!DOCTYPE html> <html><body><p>403 Forbidden</p></body></html>.";
-    send(ClientSocket, response.c_str(), response.length(), 0);
-    close(ClientSocket);
-    LogResponse(response);
-    return;
-  }
-
-  // Check if the server process has permission to access the directory
-  if (dirStat.st_uid != geteuid()) {
-    std::string response = "HTTP/1.1 403 Forbidden\r\n";
-    response += "Content-Type: text/html\r\n\r\n";
-    response +=
-        "<!DOCTYPE html> <html><body><p>403 Forbidden</p></body></html>";
-    send(ClientSocket, response.c_str(), response.length(), 0);
-    close(ClientSocket);
-    LogResponse(response);
-    return;
-  }
-
-  // Directory listing code remains unchanged
   std::stringstream response;
   response << "HTTP/1.1 200 OK\r\n";
   response << "Content-Type: text/html\r\n\r\n";
@@ -133,18 +127,19 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
   response << "<ul>\r\n";
 
   // Add parent directory link
-  std::string parentPath = requestPath;
-  if (!parentPath.empty() && parentPath != "/") {
-    if (parentPath.back() != '/') {
-      parentPath += "/";
+  if (requestPath != "/") {
+    std::string parentPath = "/";
+    if (requestPath != "/") {
+      size_t pos = requestPath.find_last_of('/');
+      if (pos != std::string::npos) {
+        parentPath = requestPath.substr(0, pos);
+        if (parentPath.empty()) {
+          parentPath = "/";
+        }
+      }
     }
-    parentPath += "..";
-    response << "<li><a href=\""
-             << (smolhttpd::sslEnabled ? "https://" : "http://")
-             << "localhost:" << portNumber << parentPath
-             << "\">../</a></li>\r\n";
-  }
-
+    response << "<li><a href=\"../\">..</li>";
+  };
   // Read directory contents
   DIR *dir;
   struct dirent *ent;
@@ -153,13 +148,11 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
       std::string filename(ent->d_name);
       if (filename != "." && filename != "..") {
         std::string filePath = requestPath;
-        if (!filePath.empty() && filePath.back() != '/') {
-          filePath += "/";
+        if (requestPath.back() != '/') {
+          filePath += '/';
         }
         filePath += filename;
-        response << "<li><a href=\""
-                 << (smolhttpd::sslEnabled ? "https://" : "http://")
-                 << "localhost:" << portNumber << filePath << "\">" << filename
+        response << "<li><a href=\"" << filePath << "\">" << filename
                  << "</a></li>\r\n";
       }
     }
@@ -231,7 +224,10 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
   std::string method = request.substr(0, pos1);
   std::string requestPath = request.substr(pos1 + 1, pos2 - pos1 - 1);
   std::string httpVersion = request.substr(pos2 + 1, pos3 - pos2 - 1);
-  requestPath = basePath + requestPath;
+
+  // Decode the request path
+  requestPath = UrlDecode(requestPath);
+
   // Generate request time
   time_t now = time(0);
   tm *gmtm = gmtime(&now);
@@ -242,13 +238,14 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
   int statusCode = 200; // Default to 200 OK
 
   // Handle serving files
+  // std::string basePath = ".";
   std::string filePath = basePath + requestPath;
   struct stat pathStat;
   stat(filePath.c_str(), &pathStat);
 
   if (S_ISDIR(pathStat.st_mode)) {
     // Serve directory listing
-    if (!requestPath.empty() && requestPath.back() != '/') {
+    if (requestPath.back() != '/') {
       requestPath += '/';
     }
     std::string directoryPath = basePath + requestPath;
@@ -456,8 +453,8 @@ int main(int argc, char *argv[]) {
     smolhttpd::debugMode = true;
   }
 
-  if (arguments.count("D") > 0) {
-    smolhttpd::basePath = arguments["D"];
+  if (arguments.count("path") > 0) {
+    smolhttpd::basePath = arguments["path"];
   }
 
   if (arguments.count("ssl") > 0) {

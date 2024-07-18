@@ -119,8 +119,17 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
   std::stringstream response;
   response << "HTTP/1.1 200 OK\r\n";
   response << "Content-Type: text/html\r\n\r\n";
-  response << "<html><head><title>Directory Listing</title></head><body "
-              "style=\"background-color: #ffffff;\">\r\n";
+  response
+      << "<html><head><title>Directory Listing</title></head>"
+         "<style>"
+         "ul { list-style-type: none; }" // Remove default bullet points
+         "li.directory::before { content: '\\1F4C1'; margin-right: 10px; }" // Folder icon for directories
+         "li.file::before { content: '\\1F4C4'; margin-right: 10px; }" // File
+                                                                       // icon
+                                                                       // for
+                                                                       // files
+         "</style>"
+         "</head><body style=\"background-color: #ffffff;\">\r\n";
   response
       << "<h1 style=\"background-color: #dddddd; padding: 10px;\">Index of "
       << requestPath << "</h1>\r\n";
@@ -139,7 +148,8 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
     if (parentPath.empty()) {
       parentPath = "/";
     }
-    response << "<li><a href=\"" << parentPath << "\">..</a></li>";
+    response << "<li class=\"directory\"><a href=\"" << parentPath
+             << "\">..</a></li>";
   }
 
   // Read directory contents
@@ -154,8 +164,20 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
           filePath += '/';
         }
         filePath += filename;
-        response << "<li><a href=\"" << filePath << "\">" << filename
-                 << "</a></li>\r\n";
+
+        struct stat pathStat;
+        std::string fullPath = directoryPath + "/" + filename;
+        stat(fullPath.c_str(), &pathStat);
+
+        if (S_ISDIR(pathStat.st_mode)) {
+          // Directory
+          response << "<li class=\"directory\"><a href=\"" << filePath << "\">"
+                   << filename << "</a></li>\r\n";
+        } else {
+          // File
+          response << "<li class=\"file\"><a href=\"" << filePath << "\">"
+                   << filename << "</a></li>\r\n";
+        }
       }
     }
     closedir(dir);
@@ -429,6 +451,8 @@ int main(int argc, char *argv[]) {
               << "  -d, --debug           Enable debug mode\n"
               << "  -v, --version         Display version information\n"
               << "  -h, --help            Display this help message\n\n"
+              << "  -path                 Path to serve files from. Defaults "
+                 "to \".\"\n\n"
               << "Examples:\n"
               << "  smolhttpd -port 8080\n"
               << "  smolhttpd -port 8443 -ssl /path/to/ssl/certificate.pem\n"

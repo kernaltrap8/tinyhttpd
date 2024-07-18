@@ -11,23 +11,33 @@
 #define TINYHTTPD_HPP
 
 #include <string>
+#include <unordered_map>
+#include <vector>
 
-#define VERSION "0.10.2"
+#define VERSION "0.10.2a"
 
+// Namespace for tinyhttpd functions and variables
 namespace tinyhttpd {
 
-// Function declarations
-
-void PrintCurrentOperation(std::string Operation);
+// Function Declarations
+std::unordered_map<std::string, std::string> ParseArguments(int argc, char *argv[]);
+void PrintCurrentOperation(const std::string operation);
 void LogRequest(const std::string &ipAddress, const std::string &requestTime,
                 const std::string &method, const std::string &requestPath,
-                const std::string &httpVersion, int statusCode);
+                const std::string &httpVersion, int statusCode,
+                const std::string &request);
+void LogResponse(const std::string &response);
+std::string UrlDecode(const std::string &str);
 void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
                            const std::string &requestPath, int portNumber);
+std::string GetLinuxDistribution();
 void HandleClientRequest(int ClientSocket, int portNumber);
 int BindToClientSocket(int SocketToBind);
-std::string GetLinuxDistribution();
 
 } // namespace tinyhttpd
 
+// Signal handler function declaration
+void signalHandler(int signum);
+
 #endif // TINYHTTPD_HPP
+

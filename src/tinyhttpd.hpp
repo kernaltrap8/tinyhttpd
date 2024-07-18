@@ -1,20 +1,20 @@
-// smolhttpd Copyright (C) 2024 kernaltrap8
+// tinyhttpd Copyright (C) 2024 kernaltrap8
 // This program comes with ABSOLUTELY NO WARRANTY
 // This is free software, and you are welcome to redistribute it
 // under certain conditions
 
 /*
-  smolhttpd.hpp
+  tinyhttpd.hpp
 */
 
-#ifndef SMOLHTTPD_HPP
-#define SMOLHTTPD_HPP
+#ifndef TINYHTTPD_HPP
+#define TINYHTTPD_HPP
 
 #include <string>
 
 #define VERSION "0.10"
 
-namespace smolhttpd {
+namespace tinyhttpd {
 
 // Function declarations
 
@@ -28,6 +28,6 @@ void HandleClientRequest(int ClientSocket, int portNumber);
 int BindToClientSocket(int SocketToBind);
 std::string GetLinuxDistribution();
 
-} // namespace smolhttpd
+} // namespace tinyhttpd
 
-#endif // SMOLHTTPD_HPP
+#endif // TINYHTTPD_HPP

@@ -1,13 +1,13 @@
-// smolhttpd Copyright (C) 2024 kernaltrap8
+// tinyhttpd Copyright (C) 2024 kernaltrap8
 // This program comes with ABSOLUTELY NO WARRANTY
 // This is free software, and you are welcome to redistribute it
 // under certain conditions
 
 /*
-  smolhttpd.cpp
+  tinyhttpd.cpp
 */
 
-#include "smolhttpd.hpp"
+#include "tinyhttpd.hpp"
 #include <algorithm>
 #include <arpa/inet.h>
 #include <csignal>
@@ -26,7 +26,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace smolhttpd {
+namespace tinyhttpd {
 std::string basePath = ".";
 volatile sig_atomic_t exitFlag = 0;
 bool debugMode = false;
@@ -206,7 +206,7 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
   response << "</ul>\r\n";
   response << "<div style=\"background-color: #dddddd; padding: 10px; "
               "position: fixed; bottom: 0; width: 100%; text-align: center;\">"
-              "smolhttpd/"
+              "tinyhttpd/"
            << VERSION << " on " << GetLinuxDistribution() << " Serving port "
            << portNumber << "</div>\r\n";
   response << "</body></html>\r\n";
@@ -449,26 +449,26 @@ int BindToClientSocket(int SocketToBind) {
   return 0;
 }
 
-} // namespace smolhttpd
+} // namespace tinyhttpd
 
 // Signal handler function
 void signalHandler(int signum) {
+  std::cerr << signum;
   std::cout << "\n";
-  std::string ExitingServerString =
-      "Exiting. (Signal: " + std::to_string(signum) + ")";
-  smolhttpd::PrintCurrentOperation(ExitingServerString);
+  std::string ExitingServerString = "Exiting.";
+  tinyhttpd::PrintCurrentOperation(ExitingServerString);
   // Set exit flag to terminate server gracefully
-  smolhttpd::exitFlag = 1;
+  tinyhttpd::exitFlag = 1;
   exit(1);
 }
 
 int main(int argc, char *argv[]) {
 
   std::unordered_map<std::string, std::string> arguments =
-      smolhttpd::ParseArguments(argc, argv);
+      tinyhttpd::ParseArguments(argc, argv);
   if (arguments.count("h") > 0 || arguments.count("help") > 0) {
-    std::cout << "smolhttpd - A small HTTP server\n"
-              << "Usage: smolhttpd -port <port_number> [-ssl <ssl_cert_path>] "
+    std::cout << "tinyhttpd - A small HTTP server\n"
+              << "Usage: tinyhttpd -port <port_number> [-ssl <ssl_cert_path>] "
                  "[-d]\n\n"
               << "Options:\n"
               << "  -port <port_number>   Specify the port number to bind on\n"
@@ -480,9 +480,9 @@ int main(int argc, char *argv[]) {
               << "  -path                 Path to serve files from. Defaults "
                  "to \".\"\n\n"
               << "Examples:\n"
-              << "  smolhttpd -port 8080\n"
-              << "  smolhttpd -port 8443 -ssl /path/to/ssl/certificate.pem\n"
-              << "  smolhttpd -port 8000 -d\n\n";
+              << "  tinyhttpd -port 8080\n"
+              << "  tinyhttpd -port 8443 -ssl /path/to/ssl/certificate.pem\n"
+              << "  tinyhttpd -port 8000 -d\n\n";
     exit(0);
   }
 
@@ -492,7 +492,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (arguments.count("v") > 0 || arguments.count("version") > 0) {
-    std::cout << "smolhttpd v" << VERSION << std::endl;
+    std::cout << "tinyhttpd v" << VERSION << std::endl;
     exit(0);
   }
 
@@ -502,17 +502,17 @@ int main(int argc, char *argv[]) {
   }
 
   if (arguments.count("d") > 0 || arguments.count("debug") > 0) {
-    smolhttpd::debugMode = true;
+    tinyhttpd::debugMode = true;
   }
 
   if (arguments.count("path") > 0) {
-    smolhttpd::basePath = arguments["path"];
+    tinyhttpd::basePath = arguments["path"];
   }
 
   if (arguments.count("ssl") > 0) {
-    smolhttpd::PrintCurrentOperation("Enabling SSL support.");
-    smolhttpd::sslEnabled = true;
-    smolhttpd::sslCertPath = arguments["ssl"];
+    tinyhttpd::PrintCurrentOperation("Enabling SSL support.");
+    tinyhttpd::sslEnabled = true;
+    tinyhttpd::sslCertPath = arguments["ssl"];
     SSL_load_error_strings();
     SSL_library_init();
   }
@@ -523,9 +523,9 @@ int main(int argc, char *argv[]) {
   signal(SIGINT, signalHandler);
 
   std::string StartingServerString =
-      "Starting smolhttpd server on port " + std::to_string(portNumber);
-  smolhttpd::PrintCurrentOperation(StartingServerString);
+      "Starting tinyhttpd server on port " + std::to_string(portNumber);
+  tinyhttpd::PrintCurrentOperation(StartingServerString);
 
   // Start the server
-  return smolhttpd::BindToClientSocket(portNumber);
+  return tinyhttpd::BindToClientSocket(portNumber);
 }

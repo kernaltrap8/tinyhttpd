@@ -152,7 +152,9 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
              << "\">..</a></li>";
   }
 
-  // Read directory contents
+  // Read directory contents and collect entries
+  std::vector<std::string> directories;
+  std::vector<std::string> files;
   DIR *dir;
   struct dirent *ent;
   if ((dir = opendir(directoryPath.c_str())) != NULL) {
@@ -171,12 +173,10 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
 
         if (S_ISDIR(pathStat.st_mode)) {
           // Directory
-          response << "<li class=\"directory\"><a href=\"" << filePath << "\">"
-                   << filename << "</a></li>\r\n";
+          directories.push_back(filename);
         } else {
           // File
-          response << "<li class=\"file\"><a href=\"" << filePath << "\">"
-                   << filename << "</a></li>\r\n";
+          files.push_back(filename);
         }
       }
     }
@@ -185,19 +185,37 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
     response << "<p>Error reading directory.</p>\r\n";
   }
 
+  // Sort directories and files alphabetically
+  std::sort(directories.begin(), directories.end());
+  std::sort(files.begin(), files.end());
+
+  // Append directories
+  for (const auto &dir : directories) {
+    std::string filePath = requestPath + dir;
+    response << "<li class=\"directory\"><a href=\"" << filePath << "\">" << dir
+             << "</a></li>\r\n";
+  }
+
+  // Append files
+  for (const auto &file : files) {
+    std::string filePath = requestPath + file;
+    response << "<li class=\"file\"><a href=\"" << filePath << "\">" << file
+             << "</a></li>\r\n";
+  }
+
   response << "</ul>\r\n";
   response << "<div style=\"background-color: #dddddd; padding: 10px; "
               "position: fixed; bottom: 0; width: 100%; text-align: center;\">"
               "smolhttpd/"
-           << VERSION << " on " << GetLinuxDistribution() << " Serving port "
-           << portNumber << "</div>\r\n";
+           << "VERSION" << " on " << "GetLinuxDistribution()"
+           << " Serving port " << portNumber << "</div>\r\n";
   response << "</body></html>\r\n";
 
   std::string responseStr = response.str();
   send(ClientSocket, responseStr.c_str(), responseStr.length(), 0);
   close(ClientSocket);
 
-  LogResponse(responseStr);
+  // LogResponse(responseStr); // Assuming LogResponse is defined elsewhere
 }
 
 std::string GetLinuxDistribution() {

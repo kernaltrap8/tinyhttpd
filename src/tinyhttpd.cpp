@@ -271,7 +271,7 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
 
     // Look for the X-Forwarded-For header
     while (std::getline(requestStream, line) && line != "\r") {
-        if (line.find("X-Forwarded-For:") != std::string::npos) {
+        if (line.find("X-Forwarded-For: ") != std::string::npos) {
             size_t colonPos = line.find(":");
             if (colonPos != std::string::npos) {
                 std::string forwardedFor = line.substr(colonPos + 1);

@@ -207,15 +207,15 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
   response << "<div style=\"background-color: #dddddd; padding: 10px; "
               "position: fixed; bottom: 0; width: 100%; text-align: center;\">"
               "smolhttpd/"
-           << "VERSION" << " on " << "GetLinuxDistribution()"
-           << " Serving port " << portNumber << "</div>\r\n";
+           << VERSION << " on " << GetLinuxDistribution() << " Serving port "
+           << portNumber << "</div>\r\n";
   response << "</body></html>\r\n";
 
   std::string responseStr = response.str();
   send(ClientSocket, responseStr.c_str(), responseStr.length(), 0);
   close(ClientSocket);
 
-  // LogResponse(responseStr); // Assuming LogResponse is defined elsewhere
+  LogResponse(responseStr);
 }
 
 std::string GetLinuxDistribution() {

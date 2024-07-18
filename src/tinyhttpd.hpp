@@ -14,13 +14,14 @@
 #include <unordered_map>
 #include <vector>
 
-#define VERSION "0.10.2a"
+#define VERSION "0.10.3"
 
 // Namespace for tinyhttpd functions and variables
 namespace tinyhttpd {
 
 // Function Declarations
-std::unordered_map<std::string, std::string> ParseArguments(int argc, char *argv[]);
+std::unordered_map<std::string, std::string> ParseArguments(int argc,
+                                                            char *argv[]);
 void PrintCurrentOperation(const std::string operation);
 void LogRequest(const std::string &ipAddress, const std::string &requestTime,
                 const std::string &method, const std::string &requestPath,
@@ -40,4 +41,3 @@ int BindToClientSocket(int SocketToBind);
 void signalHandler(int signum);
 
 #endif // TINYHTTPD_HPP
-

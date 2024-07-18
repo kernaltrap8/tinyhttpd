@@ -280,37 +280,45 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
   int statusCode = 200; // Default to 200 OK
 
   // Handle serving files
-  // std::string basePath = ".";
   std::string filePath = basePath + requestPath;
   struct stat pathStat;
   stat(filePath.c_str(), &pathStat);
 
   if (S_ISDIR(pathStat.st_mode)) {
-    // Serve directory listing
-    if (requestPath.back() != '/') {
-      requestPath += '/';
-    }
-    std::string directoryPath = basePath + requestPath;
-    ServeDirectoryListing(ClientSocket, directoryPath, requestPath, portNumber);
-    return;
-  } else {
-    // Serve file content
-    std::ifstream fileStream(filePath, std::ios::in | std::ios::binary);
-    if (!fileStream.is_open()) {
-      statusCode = 404; // Not Found
-      fileStream.close();
-      ServeDirectoryListing(ClientSocket, basePath + "/", "/", portNumber);
+    // Check if there's an index.html file in the directory
+    std::string indexPath = filePath + "/index.html";
+    struct stat indexStat;
+    if (stat(indexPath.c_str(), &indexStat) == 0 && S_ISREG(indexStat.st_mode)) {
+      // Serve index.html
+      filePath = indexPath;
+    } else {
+      // Serve directory listing
+      if (requestPath.back() != '/') {
+        requestPath += '/';
+      }
+      std::string directoryPath = basePath + requestPath;
+      ServeDirectoryListing(ClientSocket, directoryPath, requestPath, portNumber);
       return;
     }
+  }
 
-    // Log the request
-    LogRequest(clientIP, requestTime, method, requestPath, httpVersion,
-               statusCode, request);
+  // Serve file content
+  std::ifstream fileStream(filePath, std::ios::in | std::ios::binary);
+  if (!fileStream.is_open()) {
+    statusCode = 404; // Not Found
+    fileStream.close();
+    ServeDirectoryListing(ClientSocket, basePath + "/", "/", portNumber);
+    return;
+  }
 
-    // Prepare response based on status code and content of file
-    std::stringstream response;
-    response << "HTTP/1.1 ";
-    switch (statusCode) {
+  // Log the request
+  LogRequest(clientIP, requestTime, method, requestPath, httpVersion,
+             statusCode, request);
+
+  // Prepare response based on status code and content of file
+  std::stringstream response;
+  response << "HTTP/1.1 ";
+  switch (statusCode) {
     case 100:
       response << "100 Continue\r\n";
       break;
@@ -325,49 +333,49 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
       break;
     default:
       response << "500 Internal Server Error\r\n";
-    }
-
-    // Determine Content-Type
-    std::string contentType;
-    bool isTextOrHtml = false;
-    if (filePath.find(".html") != std::string::npos) {
-      contentType = "text/html";
-      isTextOrHtml = true;
-    } else if (filePath.find(".txt") != std::string::npos) {
-      contentType = "text/plain";
-      isTextOrHtml = true;
-    } else if (filePath.find(".jpg") != std::string::npos ||
-               filePath.find(".jpeg") != std::string::npos) {
-      contentType = "image/jpeg";
-    } else if (filePath.find(".png") != std::string::npos) {
-      contentType = "image/png";
-    } else {
-      contentType = "application/octet-stream"; // Default
-    }
-
-    // Read file content into response
-    std::stringstream fileContent;
-    fileContent << fileStream.rdbuf();
-    fileStream.close();
-
-    response << "Content-Type: " << contentType << "\r\n";
-    response << "Content-Length: " << fileContent.str().length() << "\r\n";
-    if (!isTextOrHtml) {
-      response << "Content-Disposition: attachment; filename=\""
-               << requestPath.substr(requestPath.find_last_of("/") + 1)
-               << "\"\r\n";
-    }
-    response << "\r\n";
-    response << fileContent.str();
-
-    // Send response
-    std::string responseStr = response.str();
-    send(ClientSocket, responseStr.c_str(), responseStr.length(), 0);
-    close(ClientSocket);
-
-    LogResponse(responseStr);
   }
+
+  // Determine Content-Type
+  std::string contentType;
+  bool isTextOrHtml = false;
+  if (filePath.find(".html") != std::string::npos) {
+    contentType = "text/html";
+    isTextOrHtml = true;
+  } else if (filePath.find(".txt") != std::string::npos) {
+    contentType = "text/plain";
+    isTextOrHtml = true;
+  } else if (filePath.find(".jpg") != std::string::npos ||
+             filePath.find(".jpeg") != std::string::npos) {
+    contentType = "image/jpeg";
+  } else if (filePath.find(".png") != std::string::npos) {
+    contentType = "image/png";
+  } else {
+    contentType = "application/octet-stream"; // Default
+  }
+
+  // Read file content into response
+  std::stringstream fileContent;
+  fileContent << fileStream.rdbuf();
+  fileStream.close();
+
+  response << "Content-Type: " << contentType << "\r\n";
+  response << "Content-Length: " << fileContent.str().length() << "\r\n";
+  if (!isTextOrHtml) {
+    response << "Content-Disposition: attachment; filename=\""
+             << requestPath.substr(requestPath.find_last_of("/") + 1)
+             << "\"\r\n";
+  }
+  response << "\r\n";
+  response << fileContent.str();
+
+  // Send response
+  std::string responseStr = response.str();
+  send(ClientSocket, responseStr.c_str(), responseStr.length(), 0);
+  close(ClientSocket);
+
+  LogResponse(responseStr);
 }
+
 
 int BindToClientSocket(int SocketToBind) {
   int ServerSocket = socket(AF_INET, SOCK_STREAM, 0);

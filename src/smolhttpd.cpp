@@ -128,18 +128,20 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
 
   // Add parent directory link
   if (requestPath != "/") {
-    std::string parentPath = "/";
-    if (requestPath != "/") {
-      size_t pos = requestPath.find_last_of('/');
-      if (pos != std::string::npos) {
-        parentPath = requestPath.substr(0, pos);
-        if (parentPath.empty()) {
-          parentPath = "/";
-        }
-      }
+    std::string parentPath = requestPath;
+    if (parentPath.back() == '/') {
+      parentPath.pop_back();
     }
-    response << "<li><a href=\"../\">..</li>";
-  };
+    size_t pos = parentPath.find_last_of('/');
+    if (pos != std::string::npos) {
+      parentPath = parentPath.substr(0, pos);
+    }
+    if (parentPath.empty()) {
+      parentPath = "/";
+    }
+    response << "<li><a href=\"" << parentPath << "\">..</a></li>";
+  }
+
   // Read directory contents
   DIR *dir;
   struct dirent *ent;

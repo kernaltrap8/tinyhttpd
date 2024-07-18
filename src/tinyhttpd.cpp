@@ -122,16 +122,19 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
   response
       << "<html><head><title>Directory Listing</title></head>"
          "<style>"
-         "ul { list-style-type: none; }" // Remove default bullet points
-         "li.directory::before { content: '\\1F4C1'; margin-right: 10px; }" // Folder icon for directories
-         "li.file::before { content: '\\1F4C4'; margin-right: 10px; }" // File
-                                                                       // icon
-                                                                       // for
-                                                                       // files
+         "html, body { height: 100%; margin: 0; }"
+         "body { display: flex; flex-direction: column; margin: 0; }"
+         "main { flex: 1; overflow-y: auto; padding: 10px; }"  // Add padding here
+         "ul { list-style-type: none; margin: 0; padding: 0; }"
+         "li { padding-left: 20px; }"  // Align content slightly to the left
+         "li.directory::before { content: '\\1F4C1'; margin-right: 10px; }"
+         "li.file::before { content: '\\1F4C4'; margin-right: 10px; }"
+         "footer { background-color: #dddddd; padding: 7px; "
+         "text-align: center; }"
          "</style>"
-         "</head><body style=\"background-color: #ffffff;\">\r\n";
-  response
-      << "<h1 style=\"background-color: #dddddd; padding: 10px;\">Index of "
+         "</head><body>\r\n"
+         "<main>\r\n"  // Main content area
+         "<h1 style=\"background-color: #dddddd; padding: 10px;\">Index of "
       << requestPath << "</h1>\r\n";
   response << "<ul>\r\n";
 
@@ -204,11 +207,9 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
   }
 
   response << "</ul>\r\n";
-  response << "<div style=\"background-color: #dddddd; padding: 10px; "
-              "position: fixed; bottom: 0; width: 100%; text-align: center;\">"
-              "tinyhttpd/"
-           << VERSION << " on " << GetLinuxDistribution() << " Serving port "
-           << portNumber << "</div>\r\n";
+  response << "</main>\r\n";
+  response << "<footer>tinyhttpd/" << VERSION << " on " << GetLinuxDistribution()
+           << " Serving port " << portNumber << "</footer>\r\n";
   response << "</body></html>\r\n";
 
   std::string responseStr = response.str();
@@ -238,144 +239,169 @@ std::string GetLinuxDistribution() {
 }
 
 void HandleClientRequest(int ClientSocket, int portNumber) {
-  char buffer[4096] = {0};
-  int valread = read(ClientSocket, buffer, 4096);
-  if (valread <= 0) {
-    close(ClientSocket);
-    return;
-  }
-
-  // Extract IP and Port
-  sockaddr_in clientAddr;
-  socklen_t clientAddrLen = sizeof(clientAddr);
-  getpeername(ClientSocket, (sockaddr *)&clientAddr, &clientAddrLen);
-  char clientIP[INET_ADDRSTRLEN];
-  inet_ntop(AF_INET, &clientAddr.sin_addr, clientIP, INET_ADDRSTRLEN);
-
-  // Parse HTTP Request
-  std::string request(buffer);
-  size_t pos1 = request.find(" ");
-  size_t pos2 = request.find(" ", pos1 + 1);
-  size_t pos3 = request.find("\r\n");
-  if (pos1 == std::string::npos || pos2 == std::string::npos ||
-      pos3 == std::string::npos) {
-    close(ClientSocket);
-    return;
-  }
-
-  std::string method = request.substr(0, pos1);
-  std::string requestPath = request.substr(pos1 + 1, pos2 - pos1 - 1);
-  std::string httpVersion = request.substr(pos2 + 1, pos3 - pos2 - 1);
-
-  // Decode the request path
-  requestPath = UrlDecode(requestPath);
-
-  // Generate request time
-  time_t now = time(0);
-  tm *gmtm = gmtime(&now);
-  char requestTime[64];
-  strftime(requestTime, sizeof(requestTime), "%d/%b/%Y:%H:%M:%S %z", gmtm);
-
-  // Determine HTTP status code
-  int statusCode = 200; // Default to 200 OK
-
-  // Handle serving files
-  std::string filePath = basePath + requestPath;
-  struct stat pathStat;
-  stat(filePath.c_str(), &pathStat);
-
-  if (S_ISDIR(pathStat.st_mode)) {
-    // Check if there's an index.html file in the directory
-    std::string indexPath = filePath + "/index.html";
-    struct stat indexStat;
-    if (stat(indexPath.c_str(), &indexStat) == 0 && S_ISREG(indexStat.st_mode)) {
-      // Serve index.html
-      filePath = indexPath;
-    } else {
-      // Serve directory listing
-      if (requestPath.back() != '/') {
-        requestPath += '/';
-      }
-      std::string directoryPath = basePath + requestPath;
-      ServeDirectoryListing(ClientSocket, directoryPath, requestPath, portNumber);
-      return;
+    char buffer[4096] = {0};
+    int valread = read(ClientSocket, buffer, 4096);
+    if (valread <= 0) {
+        close(ClientSocket);
+        return;
     }
-  }
 
-  // Serve file content
-  std::ifstream fileStream(filePath, std::ios::in | std::ios::binary);
-  if (!fileStream.is_open()) {
-    statusCode = 404; // Not Found
+    // Extract IP and Port
+    sockaddr_storage clientAddr;
+    socklen_t clientAddrLen = sizeof(clientAddr);
+    getpeername(ClientSocket, (sockaddr *)&clientAddr, &clientAddrLen);
+
+    char clientIP[INET6_ADDRSTRLEN];
+    if (clientAddr.ss_family == AF_INET) {
+        struct sockaddr_in *s = (struct sockaddr_in *)&clientAddr;
+        inet_ntop(AF_INET, &s->sin_addr, clientIP, sizeof(clientIP));
+    } else if (clientAddr.ss_family == AF_INET6) {
+        struct sockaddr_in6 *s = (struct sockaddr_in6 *)&clientAddr;
+        inet_ntop(AF_INET6, &s->sin6_addr, clientIP, sizeof(clientIP));
+    }
+
+    std::string realClientIP = clientIP;
+
+    // Parse HTTP Request
+    std::string request(buffer);
+    std::istringstream requestStream(request);
+    std::string line;
+    std::string xForwardedForIP;
+
+    // Look for the X-Forwarded-For header
+    while (std::getline(requestStream, line) && line != "\r") {
+        if (line.find("X-Forwarded-For:") != std::string::npos) {
+            size_t colonPos = line.find(":");
+            if (colonPos != std::string::npos) {
+                std::string forwardedFor = line.substr(colonPos + 1);
+                forwardedFor.erase(0, forwardedFor.find_first_not_of(" \t")); // Trim leading spaces
+                forwardedFor.erase(forwardedFor.find_last_not_of(" \t") + 1); // Trim trailing spaces
+                xForwardedForIP = forwardedFor;
+                break;
+            }
+        }
+    }
+
+    if (!xForwardedForIP.empty()) {
+        realClientIP = xForwardedForIP;
+    }
+
+    size_t pos1 = request.find(" ");
+    size_t pos2 = request.find(" ", pos1 + 1);
+    size_t pos3 = request.find("\r\n");
+    if (pos1 == std::string::npos || pos2 == std::string::npos || pos3 == std::string::npos) {
+        close(ClientSocket);
+        return;
+    }
+
+    std::string method = request.substr(0, pos1);
+    std::string requestPath = request.substr(pos1 + 1, pos2 - pos1 - 1);
+    std::string httpVersion = request.substr(pos2 + 1, pos3 - pos2 - 1);
+
+    // Decode the request path
+    requestPath = UrlDecode(requestPath);
+
+    // Generate request time
+    time_t now = time(0);
+    tm *gmtm = gmtime(&now);
+    char requestTime[64];
+    strftime(requestTime, sizeof(requestTime), "%d/%b/%Y:%H:%M:%S %z", gmtm);
+
+    // Determine HTTP status code
+    int statusCode = 200; // Default to 200 OK
+
+    // Log the request
+    LogRequest(realClientIP, requestTime, method, requestPath, httpVersion, statusCode, request);
+
+    // Handle serving files
+    std::string filePath = basePath + requestPath;
+    struct stat pathStat;
+    stat(filePath.c_str(), &pathStat);
+
+    if (S_ISDIR(pathStat.st_mode)) {
+        // Check if there's an index.html file in the directory
+        std::string indexPath = filePath + "/index.html";
+        struct stat indexStat;
+        if (stat(indexPath.c_str(), &indexStat) == 0 && S_ISREG(indexStat.st_mode)) {
+            // Serve index.html
+            filePath = indexPath;
+        } else {
+            // Serve directory listing
+            if (requestPath.back() != '/') {
+                requestPath += '/';
+            }
+            std::string directoryPath = basePath + requestPath;
+            ServeDirectoryListing(ClientSocket, directoryPath, requestPath, portNumber);
+            return;
+        }
+    }
+
+    // Serve file content
+    std::ifstream fileStream(filePath, std::ios::in | std::ios::binary);
+    if (!fileStream.is_open()) {
+        statusCode = 404; // Not Found
+        fileStream.close();
+        ServeDirectoryListing(ClientSocket, basePath + "/", "/", portNumber);
+        return;
+    }
+
+    // Prepare response based on status code and content of file
+    std::stringstream response;
+    response << "HTTP/1.1 ";
+    switch (statusCode) {
+        case 100:
+            response << "100 Continue\r\n";
+            break;
+        case 101:
+            response << "101 Switching Protocols\r\n";
+            break;
+        case 200:
+            response << "200 OK\r\n";
+            break;
+        case 404:
+            response << "404 Not Found\r\n";
+            break;
+        default:
+            response << "500 Internal Server Error\r\n";
+    }
+
+    // Determine Content-Type
+    std::string contentType;
+    bool isTextOrHtml = false;
+    if (filePath.find(".html") != std::string::npos) {
+        contentType = "text/html";
+        isTextOrHtml = true;
+    } else if (filePath.find(".txt") != std::string::npos) {
+        contentType = "text/plain";
+        isTextOrHtml = true;
+    } else if (filePath.find(".jpg") != std::string::npos || filePath.find(".jpeg") != std::string::npos) {
+        contentType = "image/jpeg";
+    } else if (filePath.find(".png") != std::string::npos) {
+        contentType = "image/png";
+    } else {
+        contentType = "application/octet-stream"; // Default
+    }
+
+    // Read file content into response
+    std::stringstream fileContent;
+    fileContent << fileStream.rdbuf();
     fileStream.close();
-    ServeDirectoryListing(ClientSocket, basePath + "/", "/", portNumber);
-    return;
-  }
 
-  // Log the request
-  LogRequest(clientIP, requestTime, method, requestPath, httpVersion,
-             statusCode, request);
+    response << "Content-Type: " << contentType << "\r\n";
+    response << "Content-Length: " << fileContent.str().length() << "\r\n";
+    if (!isTextOrHtml) {
+        response << "Content-Disposition: attachment; filename=\"" << requestPath.substr(requestPath.find_last_of("/") + 1) << "\"\r\n";
+    }
+    response << "\r\n";
+    response << fileContent.str();
 
-  // Prepare response based on status code and content of file
-  std::stringstream response;
-  response << "HTTP/1.1 ";
-  switch (statusCode) {
-    case 100:
-      response << "100 Continue\r\n";
-      break;
-    case 101:
-      response << "101 Switching Protocols\r\n";
-      break;
-    case 200:
-      response << "200 OK\r\n";
-      break;
-    case 404:
-      response << "404 Not Found\r\n";
-      break;
-    default:
-      response << "500 Internal Server Error\r\n";
-  }
+    // Send response
+    std::string responseStr = response.str();
+    send(ClientSocket, responseStr.c_str(), responseStr.length(), 0);
+    close(ClientSocket);
 
-  // Determine Content-Type
-  std::string contentType;
-  bool isTextOrHtml = false;
-  if (filePath.find(".html") != std::string::npos) {
-    contentType = "text/html";
-    isTextOrHtml = true;
-  } else if (filePath.find(".txt") != std::string::npos) {
-    contentType = "text/plain";
-    isTextOrHtml = true;
-  } else if (filePath.find(".jpg") != std::string::npos ||
-             filePath.find(".jpeg") != std::string::npos) {
-    contentType = "image/jpeg";
-  } else if (filePath.find(".png") != std::string::npos) {
-    contentType = "image/png";
-  } else {
-    contentType = "application/octet-stream"; // Default
-  }
-
-  // Read file content into response
-  std::stringstream fileContent;
-  fileContent << fileStream.rdbuf();
-  fileStream.close();
-
-  response << "Content-Type: " << contentType << "\r\n";
-  response << "Content-Length: " << fileContent.str().length() << "\r\n";
-  if (!isTextOrHtml) {
-    response << "Content-Disposition: attachment; filename=\""
-             << requestPath.substr(requestPath.find_last_of("/") + 1)
-             << "\"\r\n";
-  }
-  response << "\r\n";
-  response << fileContent.str();
-
-  // Send response
-  std::string responseStr = response.str();
-  send(ClientSocket, responseStr.c_str(), responseStr.length(), 0);
-  close(ClientSocket);
-
-  LogResponse(responseStr);
+    LogResponse(responseStr);
 }
-
 
 int BindToClientSocket(int SocketToBind) {
   int ServerSocket = socket(AF_INET, SOCK_STREAM, 0);

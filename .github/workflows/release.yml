@@ -13,6 +13,11 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
+    - name: Setup Meson and Ninja
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y meson ninja
+
     - name: Extract version from source code
       id: get_version
       run: |
@@ -32,8 +37,7 @@ jobs:
     - name: Build project
       run: |
         meson setup build
-        cd build
-        meson compile
+        meson compile -C build
         tar -czf build/tinyhttpd.tar.gz build/tinyhttpd
 
     - name: Create a new release

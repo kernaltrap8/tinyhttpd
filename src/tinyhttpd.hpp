@@ -27,7 +27,7 @@ void LogRequest(const std::string &ipAddress, const std::string &requestTime,
                 const std::string &method, const std::string &requestPath,
                 const std::string &httpVersion, int statusCode,
                 const std::string &request);
-void LogResponse(const std::string &response);
+void LogResponse(const std::string &response, const std::string &clientIp);
 std::string UrlDecode(const std::string &str);
 void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
                            const std::string &requestPath, int portNumber);

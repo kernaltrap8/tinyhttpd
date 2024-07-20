@@ -18,13 +18,12 @@
 #include <iostream>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
-#include <pwd.h> // Include for getpwuid()
+#include <pwd.h>
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
 #include <thread>
 #include <unistd.h>
-#include <unistd.h> // Include for getuid()
 #include <unordered_map>
 #include <vector>
 
@@ -43,6 +42,14 @@ const std::string RESET = "\033[0m";
 struct Argument {
   std::string flag;
   std::string value;
+};
+
+struct FileInfo {
+  std::string name;
+  std::string filePath;
+  std::time_t mtime;
+  long long size;
+  bool isDirectory;
 };
 
 // Function to parse argument data from Argument stuct
@@ -116,10 +123,21 @@ std::string UrlDecode(const std::string &str) {
   return result;
 }
 
+bool compareByName(const FileInfo &a, const FileInfo &b) {
+  return a.name < b.name;
+}
+
+bool compareByMtime(const FileInfo &a, const FileInfo &b) {
+  return a.mtime > b.mtime; // Newest first
+}
+
+bool compareBySize(const FileInfo &a, const FileInfo &b) {
+  return a.size > b.size; // Largest first
+}
+
 void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
                            const std::string &requestPath, int portNumber) {
   std::stringstream response;
-  // Construct the response body
   response << "\r\n";
   response
       << "<html><head><title>Directory Listing</title></head>"
@@ -161,29 +179,30 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
   }
 
   // Read directory contents and collect entries
-  std::vector<std::string> directories;
-  std::vector<std::string> files;
+  std::vector<FileInfo> filesAndDirs;
   DIR *dir;
   struct dirent *ent;
   if ((dir = opendir(directoryPath.c_str())) != NULL) {
     while ((ent = readdir(dir)) != NULL) {
       std::string filename(ent->d_name);
       if (filename != "." && filename != "..") {
-        std::string filePath = requestPath;
-        if (requestPath.back() != '/') {
-          filePath += '/';
-        }
-        filePath += filename;
+        std::string fullPath = directoryPath + "/" + filename;
 
         struct stat pathStat;
-        std::string fullPath = directoryPath + "/" + filename;
-        stat(fullPath.c_str(), &pathStat);
-
-        if (S_ISDIR(pathStat.st_mode)) {
-          directories.push_back(filename);
-        } else {
-          files.push_back(filename);
+        if (stat(fullPath.c_str(), &pathStat) != 0) {
+          response << "<p>Error reading file information.</p>\r\n";
+          continue;
         }
+
+        FileInfo fileInfo;
+        fileInfo.name = filename;
+        fileInfo.filePath =
+            requestPath + (requestPath.back() == '/' ? "" : "/") + filename;
+        fileInfo.mtime = pathStat.st_mtime;
+        fileInfo.size = pathStat.st_size;
+        fileInfo.isDirectory = S_ISDIR(pathStat.st_mode);
+
+        filesAndDirs.push_back(fileInfo);
       }
     }
     closedir(dir);
@@ -191,107 +210,91 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
     response << "<p>Error reading directory.</p>\r\n";
   }
 
-  // Sort directories and files alphabetically
-  std::sort(directories.begin(), directories.end());
-  std::sort(files.begin(), files.end());
+  // Sort entries by all criteria in a composite manner
+  std::sort(filesAndDirs.begin(), filesAndDirs.end(),
+            [](const FileInfo &a, const FileInfo &b) {
+              // First, sort by directory status (directories before files)
+              if (a.isDirectory != b.isDirectory) {
+                return a.isDirectory;
+              }
+              // Next, sort by name
+              if (a.name != b.name) {
+                return a.name < b.name;
+              }
+              // Then, sort by modification time
+              if (a.mtime != b.mtime) {
+                return a.mtime > b.mtime; // Newest first
+              }
+              // Finally, sort by size
+              return a.size > b.size; // Largest first
+            });
 
   // Find the maximum width of file info
   std::size_t maxLength = 0;
-  for (const auto &file : files) {
-    std::string filePath = requestPath;
-    if (filePath.back() != '/') {
-      filePath += '/';
-    }
-    filePath += file;
-
-    struct stat pathStat;
-    std::string fullPath = directoryPath + "/" + file;
-    stat(fullPath.c_str(), &pathStat);
-
-    std::time_t t = pathStat.st_mtime;
-    std::tm *tm = std::localtime(&t);
-    char date[20];
-    char time[20];
-    std::strftime(date, sizeof(date), "%Y-%m-%d", tm);
-    std::strftime(time, sizeof(time), "%H:%M:%S", tm);
-
+  for (const auto &info : filesAndDirs) {
     std::string sizeStr;
-    long long size = pathStat.st_size;
-    if (size > 1LL << 30) { // Greater than 1 GB
-      sizeStr = std::to_string(size / (1LL << 30)) + " GB";
-    } else if (size > 1LL << 20) { // Greater than 1 MB but less than 1 GB
-      sizeStr = std::to_string(size / (1LL << 20)) + " MB";
+    if (info.size > 1LL << 30) { // Greater than 1 GB
+      sizeStr = std::to_string(info.size / (1LL << 30)) + " GB";
+    } else if (info.size > 1LL << 20) { // Greater than 1 MB but less than 1 GB
+      sizeStr = std::to_string(info.size / (1LL << 20)) + " MB";
+    } else if (info.size > 1LL << 10) { // Greater than 1 KB but less than 1 MB
+      sizeStr = std::to_string(info.size / (1LL << 10)) + " KB";
     } else {
-      sizeStr = std::to_string(size) + " bytes";
+      sizeStr = std::to_string(info.size) + " bytes";
     }
 
-    std::string info =
-        std::string(date) + " " + std::string(time) + " " + sizeStr;
-    if (info.length() > maxLength) {
-      maxLength = info.length();
+    char dateBuffer[20];
+    char timeBuffer[20];
+    std::tm *tm = std::localtime(&info.mtime);
+    std::strftime(dateBuffer, sizeof(dateBuffer), "%Y-%m-%d", tm);
+    std::strftime(timeBuffer, sizeof(timeBuffer), "%H:%M:%S", tm);
+
+    std::string infoStr =
+        std::string(dateBuffer) + " " + std::string(timeBuffer) + " " + sizeStr;
+    if (infoStr.length() > maxLength) {
+      maxLength = infoStr.length();
     }
   }
 
-  // Append directories
-  for (const auto &dir : directories) {
-    std::string filePath = requestPath;
-    if (filePath.back() != '/') {
-      filePath += '/';
-    }
-    filePath += dir;
+  // Append entries
+  for (const auto &info : filesAndDirs) {
+    std::string date;
+    std::string time;
+    std::tm *tm = std::localtime(&info.mtime);
+    char dateBuffer[20];
+    char timeBuffer[20];
+    std::strftime(dateBuffer, sizeof(dateBuffer), "%Y-%m-%d", tm);
+    std::strftime(timeBuffer, sizeof(timeBuffer), "%H:%M:%S", tm);
 
-    struct stat pathStat;
-    std::string fullPath = directoryPath + "/" + dir;
-    stat(fullPath.c_str(), &pathStat);
+    date = dateBuffer;
+    time = timeBuffer;
 
-    std::time_t t = pathStat.st_mtime;
-    std::tm *tm = std::localtime(&t);
-    char date[20];
-    char time[20];
-    std::strftime(date, sizeof(date), "%Y-%m-%d", tm);
-    std::strftime(time, sizeof(time), "%H:%M:%S", tm);
-
-    response << "<li class=\"directory\"><a href=\"" << filePath << "\">" << dir
-             << "</a><div class=\"file-info\"><span style=\"width: "
-             << maxLength << "ch; display: inline-block;\">" << date << " "
-             << time << "</span></div></li>\r\n";
-  }
-
-  // Append files
-  for (const auto &file : files) {
-    std::string filePath = requestPath;
-    if (filePath.back() != '/') {
-      filePath += '/';
-    }
-    filePath += file;
-
-    struct stat pathStat;
-    std::string fullPath = directoryPath + "/" + file;
-    stat(fullPath.c_str(), &pathStat);
-
-    std::time_t t = pathStat.st_mtime;
-    std::tm *tm = std::localtime(&t);
-    char date[20];
-    char time[20];
-    std::strftime(date, sizeof(date), "%Y-%m-%d", tm);
-    std::strftime(time, sizeof(time), "%H:%M:%S", tm);
-
-    std::string sizeStr;
-    long long size = pathStat.st_size;
-    if (size > 1LL << 30) { // Greater than 1 GB
-      sizeStr = std::to_string(size / (1LL << 30)) + " GB";
-    } else if (size > 1LL << 20) { // Greater than 1 MB but less than 1 GB
-      sizeStr = std::to_string(size / (1LL << 20)) + " MB";
-    } else if (size > 1LL << 10) { // Greater than 1 KB but less than 1 MB
-      sizeStr = std::to_string(size / (1LL << 10)) + " KB";
+    if (info.isDirectory) {
+      response << "<li class=\"directory\"><a href=\"" << info.filePath << "\">"
+               << info.name
+               << "</a><div class=\"file-info\"><span style=\"width: "
+               << maxLength << "ch; display: inline-block;\">" << date << " "
+               << time << "</span></div></li>\r\n";
     } else {
-      sizeStr = std::to_string(size) + " bytes";
-    }
+      std::string sizeStr;
+      if (info.size > 1LL << 30) { // Greater than 1 GB
+        sizeStr = std::to_string(info.size / (1LL << 30)) + " GB";
+      } else if (info.size >
+                 1LL << 20) { // Greater than 1 MB but less than 1 GB
+        sizeStr = std::to_string(info.size / (1LL << 20)) + " MB";
+      } else if (info.size >
+                 1LL << 10) { // Greater than 1 KB but less than 1 MB
+        sizeStr = std::to_string(info.size / (1LL << 10)) + " KB";
+      } else {
+        sizeStr = std::to_string(info.size) + " bytes";
+      }
 
-    response << "<li class=\"file\"><a href=\"" << filePath << "\">" << file
-             << "</a><div class=\"file-info\"><span style=\"width: "
-             << maxLength << "ch; display: inline-block;\">" << date << " "
-             << time << " " << sizeStr << "</span></div></li>\r\n";
+      response << "<li class=\"file\"><a href=\"" << info.filePath << "\">"
+               << info.name
+               << "</a><div class=\"file-info\"><span style=\"width: "
+               << maxLength << "ch; display: inline-block;\">" << date << " "
+               << time << " " << sizeStr << "</span></div></li>\r\n";
+    }
   }
 
   response << "</ul>\r\n";

@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
-#define VERSION "0.11.0c"
+#define VERSION "0.11.0d"
 
 // Namespace for tinyhttpd functions and variables
 namespace tinyhttpd {

@@ -49,7 +49,7 @@ jobs:
 
     - name: Create release asset
       run: |
-        tar -czf "builddir/tinyhttpd-${VERSION}.tar.gz" builddir/tinyhttpd
+        tar -czf builddir/tinyhttpd-$VERSION.tar.gz builddir/tinyhttpd
     
     - name: Create a new release
       id: create_release

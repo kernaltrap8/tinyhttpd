@@ -16,7 +16,7 @@ jobs:
     - name: Setup Meson and Ninja
       run: |
         sudo apt-get update
-        sudo apt-get install -y meson ninja
+        sudo apt-get install -y meson ninja-build
 
     - name: Extract version from source code
       id: get_version

@@ -31,10 +31,9 @@ jobs:
 
     - name: Build project
       run: |
-        # Add your build commands here
-        mkdir -p build
-        # Assuming you have a build command like `make` or similar
-        make
+        meson setup build
+        cd build
+        meson compile
         tar -czf build/tinyhttpd.tar.gz build/tinyhttpd
 
     - name: Create a new release

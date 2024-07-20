@@ -66,8 +66,8 @@ jobs:
       uses: actions/upload-release-asset@v1
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: "./builddir/tinyhttpd-${VERSION}.tar.gz"
-        asset_name: "tinyhttpd-${VERSION.tar.gz}"
+        asset_path: "builddir/tinyhttpd-${{ env.VERSION }}.tar.gz"
+        asset_name: "tinyhttpd-${{ env.VERSION }}.tar.gz"
         asset_content_type: application/gzip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

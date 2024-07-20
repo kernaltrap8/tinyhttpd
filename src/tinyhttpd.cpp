@@ -343,6 +343,7 @@ std::string GetMimeType(const std::string &filePath) {
       {"json", "application/json"}, {"txt", "text/plain"},
       {"md", "text/markdown"},      {"xml", "application/xml"},
       {"csv", "text/csv"},          {"svg", "image/svg+xml"},
+      {"yml", "text/yml"},
   };
 
   if (mimeTypes.find(extension) != mimeTypes.end()) {

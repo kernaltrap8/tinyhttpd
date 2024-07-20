@@ -1,2 +1,2 @@
-# smolhttpd
-Small HTTP server. Written in C++.
+# tinyhttpd
+Small HTTP server written in C++.

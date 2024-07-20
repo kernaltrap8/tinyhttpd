@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+  releases: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -13,7 +17,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Setup Meson and Ninja
+    - name: Set up Meson and Ninja
       run: |
         sudo apt-get update
         sudo apt-get install -y meson ninja-build
@@ -34,11 +38,13 @@ jobs:
         git tag "v${{ env.VERSION }}"
         git push origin "v${{ env.VERSION }}"
 
-    - name: Build project
+    - name: Configure Meson build
       run: |
-        meson setup build
-        meson compile -C build
-        tar -czf build/tinyhttpd.tar.gz build/tinyhttpd
+        meson setup builddir
+
+    - name: Build with Meson
+      run: |
+        meson compile -C builddir
 
     - name: Create a new release
       id: create_release
@@ -58,3 +64,5 @@ jobs:
         asset_path: ./build/tinyhttpd.tar.gz
         asset_name: tinyhttpd.tar.gz
         asset_content_type: application/gzip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

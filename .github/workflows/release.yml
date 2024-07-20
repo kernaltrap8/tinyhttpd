@@ -1,0 +1,55 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Extract version from source code
+      id: get_version
+      run: |
+        VERSION=$(grep '#define VERSION ' src/tinyhttpd.hpp | awk '{print $3}' | tr -d '"')
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+    - name: Set up Git
+      uses: actions/setup-git@v3
+      with:
+        git-config-name: github-actions
+        git-config-email: github-actions@github.com
+
+    - name: Create a new tag
+      run: |
+        git tag "v${{ env.VERSION }}"
+        git push origin "v${{ env.VERSION }}"
+
+    - name: Build project
+      run: |
+        # Add your build commands here
+        mkdir build
+        tar -czf build/tinyhttpd.tar.gz build/tinyhttpd
+
+    - name: Upload release asset
+      uses: actions/create-release@v1
+      with:
+        tag_name: "v${{ env.VERSION }}"
+        release_name: "Release ${{ env.VERSION }}"
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload release asset
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./build/project.tar.gz
+        asset_name: project.tar.gz
+        asset_content_type: application/gzip

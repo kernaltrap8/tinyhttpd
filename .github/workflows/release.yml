@@ -19,11 +19,10 @@ jobs:
         VERSION=$(grep '#define VERSION ' src/tinyhttpd.hpp | awk '{print $3}' | tr -d '"')
         echo "VERSION=$VERSION" >> $GITHUB_ENV
 
-    - name: Set up Git
-      uses: actions/setup-git@v3
-      with:
-        git-config-name: github-actions
-        git-config-email: github-actions@github.com
+    - name: Configure Git
+      run: |
+        git config --global user.name "github-actions"
+        git config --global user.email "github-actions@github.com"
 
     - name: Create a new tag
       run: |
@@ -33,10 +32,13 @@ jobs:
     - name: Build project
       run: |
         # Add your build commands here
-        mkdir build
+        mkdir -p build
+        # Assuming you have a build command like `make` or similar
+        make
         tar -czf build/tinyhttpd.tar.gz build/tinyhttpd
 
-    - name: Upload release asset
+    - name: Create a new release
+      id: create_release
       uses: actions/create-release@v1
       with:
         tag_name: "v${{ env.VERSION }}"
@@ -50,6 +52,6 @@ jobs:
       uses: actions/upload-release-asset@v1
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./build/project.tar.gz
-        asset_name: project.tar.gz
+        asset_path: ./build/tinyhttpd.tar.gz
+        asset_name: tinyhttpd.tar.gz
         asset_content_type: application/gzip

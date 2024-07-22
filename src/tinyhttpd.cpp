@@ -134,6 +134,12 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
                            const std::string &requestPath, int portNumber) {
   std::string indexPath = directoryPath + "/index.html";
   std::ifstream indexFile(indexPath);
+
+  if (!indexFile) {
+      // If index.html does not exist, try index.htm
+      indexPath = directoryPath + "/index.htm";
+      indexFile.open(indexPath);
+  }
   
   if (indexFile) {
     // If index.html exists, serve it

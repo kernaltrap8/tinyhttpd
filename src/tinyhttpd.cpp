@@ -132,10 +132,31 @@ bool compareBySize(const FileInfo &a, const FileInfo &b) {
 
 void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
                            const std::string &requestPath, int portNumber) {
+  std::string indexPath = directoryPath + "/index.html";
+  std::ifstream indexFile(indexPath);
+  
+  if (indexFile) {
+    // If index.html exists, serve it
+    std::stringstream response;
+    response << indexFile.rdbuf();  // Read the content of index.html
+    
+    std::string responseStr = response.str();
+    std::string responseHeader =
+        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " +
+        std::to_string(responseStr.length()) + "\r\n\r\n";
+    send(ClientSocket, responseHeader.c_str(), responseHeader.length(), 0);
+    send(ClientSocket, responseStr.c_str(), responseStr.length(), 0);
+    close(ClientSocket);
+
+    LogResponse(responseStr);
+    return;
+  }
+
   std::stringstream response;
   response << "\r\n";
   response
-      << "<html><head><title>Directory Listing</title></head>"
+      << "<html><head>"
+         "<title>Directory Listing</title></head>"
          "<style>"
          "html, body { height: 100%; margin: 0; }"
          "body { display: flex; flex-direction: column; margin: 0; }"
@@ -159,7 +180,6 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
          "<h1 style=\"background-color: #dddddd; padding: 10px;\">Index of "
       << requestPath << "</h1>\r\n";
   response << "<ul>\r\n";
-
   // Add parent directory link
   if (requestPath != "/") {
     std::string parentPath = requestPath;

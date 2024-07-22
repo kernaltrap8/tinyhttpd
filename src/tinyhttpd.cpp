@@ -16,8 +16,6 @@
 #include <dirent.h>
 #include <fstream>
 #include <iostream>
-#include <openssl/err.h>
-#include <openssl/ssl.h>
 #include <pwd.h>
 #include <sstream>
 #include <string>
@@ -31,9 +29,6 @@ namespace tinyhttpd {
 std::string basePath = ".";
 volatile sig_atomic_t exitFlag = 0;
 bool debugMode = false;
-bool sslEnabled = false; // Flag to check if SSL is enabled
-std::string sslCertPath; // Path to SSL certificate
-
 const std::string RED = "\033[31m";
 const std::string GREEN = "\033[32m";
 const std::string RESET = "\033[0m";
@@ -144,16 +139,20 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
          "<style>"
          "html, body { height: 100%; margin: 0; }"
          "body { display: flex; flex-direction: column; margin: 0; }"
-         "main { flex: 1; overflow-y: auto; padding: 10px; }"
-         "ul { list-style-type: none; margin: 0; padding: 0; }"
-         "li { display: flex; align-items: center; padding-left: 20px; }"
+         "main { flex: 1; overflow-y: auto; padding: 10px; position: relative; "
+         "}"
+         "ul { list-style-type: none; margin: 0; padding: 0; white-space: "
+         "nowrap; }"
+         "li { display: flex; align-items: center; padding-left: 20px; "
+         "position: relative; }"
          "li.directory::before { content: '\\1F4C1'; margin-right: 10px; }"
          "li.file::before { content: '\\1F4C4'; margin-right: 10px; }"
-         ".file-info { margin-left: auto; display: flex; }"
-         ".file-info span { margin-left: 80px; margin-right: 1200px; "
-         "white-space: nowrap; }"
+         ".file-info { position: absolute; left: 500px; top: 0; "
+         "background-color: #ffffff; z-index: 1; }"
+         ".file-info span { display: inline-block; white-space: nowrap; }"
          "footer { background-color: #dddddd; padding: 7px; text-align: "
          "center; }"
+         "a { color: #0000EE; text-decoration: underline; }"
          "</style>"
          "</head><body>\r\n"
          "<main>\r\n"
@@ -497,25 +496,8 @@ int BindToClientSocket(int SocketToBind) {
       return 1;
     }
 
-    if (sslEnabled) {
-      // Handle SSL connection
-      SSL_CTX *sslContext = SSL_CTX_new(SSLv23_server_method());
-      SSL *ssl = SSL_new(sslContext);
-      SSL_set_fd(ssl, ClientSocket);
-      if (SSL_accept(ssl) <= 0) {
-        ERR_print_errors_fp(stderr);
-        close(ClientSocket);
-        continue;
-      }
-      // Handle SSL connection using ssl object
-      // Example: SSL_read(ssl, ...), SSL_write(ssl, ...)
-      HttpdServerThread_t.emplace_back(HandleClientRequest, SSL_get_fd(ssl),
-                                       SocketToBind);
-    } else {
-      // Handle non-SSL connection
-      HttpdServerThread_t.emplace_back(HandleClientRequest, ClientSocket,
-                                       SocketToBind);
-    }
+    HttpdServerThread_t.emplace_back(HandleClientRequest, ClientSocket,
+                                     SocketToBind);
   }
 
   // Join all threads before exiting
@@ -547,22 +529,7 @@ int main(int argc, char *argv[]) {
   std::unordered_map<std::string, std::string> arguments =
       tinyhttpd::ParseArguments(argc, argv);
   if (arguments.count("h") > 0 || arguments.count("help") > 0) {
-    std::cout << "tinyhttpd - A small HTTP server\n"
-              << "Usage: tinyhttpd -port <port_number> [-ssl <ssl_cert_path>] "
-                 "[-d]\n\n"
-              << "Options:\n"
-              << "  -port <port_number>   Specify the port number to bind on\n"
-              << "  -ssl <ssl_cert_path>  Enable SSL/TLS support and specify "
-                 "SSL certificate path\n"
-              << "  -d, --debug           Enable debug mode\n"
-              << "  -v, --version         Display version information\n"
-              << "  -h, --help            Display this help message\n\n"
-              << "  -path                 Path to serve files from. Defaults "
-                 "to \".\"\n\n"
-              << "Examples:\n"
-              << "  tinyhttpd -port 8080\n"
-              << "  tinyhttpd -port 8443 -ssl /path/to/ssl/certificate.pem\n"
-              << "  tinyhttpd -port 8000 -d\n\n";
+    std::cout << help;
     exit(0);
   }
 
@@ -587,14 +554,6 @@ int main(int argc, char *argv[]) {
 
   if (arguments.count("path") > 0) {
     tinyhttpd::basePath = arguments["path"];
-  }
-
-  if (arguments.count("ssl") > 0) {
-    tinyhttpd::PrintCurrentOperation("Enabling SSL support.");
-    tinyhttpd::sslEnabled = true;
-    tinyhttpd::sslCertPath = arguments["ssl"];
-    SSL_load_error_strings();
-    SSL_library_init();
   }
 
   int portNumber = std::atoi(arguments["port"].c_str());

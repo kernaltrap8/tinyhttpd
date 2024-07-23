@@ -14,16 +14,16 @@
 #include <unordered_map>
 #include <vector>
 
-#define VERSION "0.12.2"
+#define VERSION "0.12.2a"
 
-constexpr const std::string_view help = R"(tinyhttpd - A small HTTP server
+constexpr std::string_view help = R"(tinyhttpd - A small HTTP server
 Usage: tinyhttpd -port <port_number> [-ssl <ssl_cert_path>] [-d]	
 Options:
   -port <port_number>   Specify the port number to bind on
   -d, --debug           Enable debug mode
   -v, --version         Display version information
   -h, --help            Display this help message
-  -path                 Path to serve files from. Defaults to \".\"
+  -path                 Path to serve files from. Defaults to "."
 Examples:
    tinyhttpd -port 8080
    tinyhttpd -port 8443 -ssl /path/to/ssl/certificate.pem

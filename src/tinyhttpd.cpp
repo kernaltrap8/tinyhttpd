@@ -47,7 +47,7 @@ struct FileInfo {
   bool isDirectory;
 };
 
-// Function to parse argument data from Argument stuct
+// Function to parse argument data from Argument struct
 std::unordered_map<std::string, std::string> ParseArguments(int argc,
                                                             char *argv[]) {
   std::unordered_map<std::string, std::string> arguments;
@@ -136,16 +136,16 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
   std::ifstream indexFile(indexPath);
 
   if (!indexFile) {
-      // If index.html does not exist, try index.htm
-      indexPath = directoryPath + "/index.htm";
-      indexFile.open(indexPath);
+    // If index.html does not exist, try index.htm
+    indexPath = directoryPath + "/index.htm";
+    indexFile.open(indexPath);
   }
-  
+
   if (indexFile) {
     // If index.html exists, serve it
     std::stringstream response;
-    response << indexFile.rdbuf();  // Read the content of index.html
-    
+    response << indexFile.rdbuf(); // Read the content of index.html
+
     std::string responseStr = response.str();
     std::string responseHeader =
         "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " +

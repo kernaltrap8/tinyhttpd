@@ -23,6 +23,7 @@
 #include <thread>
 #include <unistd.h>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace tinyhttpd {
@@ -398,6 +399,24 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
   // URL-decode the request path
   requestPath = UrlDecode(requestPath);
 
+  // Define the blacklisted paths
+  const std::unordered_set<std::string> blacklistedPaths = {
+      "/bin",   "/boot",       "/dev",       "/etc", "/home", "/lib",
+      "/lib64", "/media",      "/mnt",       "/opt", "/proc", "/root",
+      "/run",   "/sbin",       "/srv",       "/sys", "/tmp",  "/usr",
+      "/var",   "/etc/passwd", "/etc/shadow"};
+
+  // Check if the request path is any of these blacklisted paths
+  if (blacklistedPaths.find(requestPath) != blacklistedPaths.end()) {
+    std::string forbiddenResponse =
+        "HTTP/1.1 403 Forbidden\r\nContent-Type: text/html\r\n\r\n"
+        "<html><body><h1>403 Forbidden</h1><p>Access denied.</p></body></html>";
+    send(ClientSocket, forbiddenResponse.c_str(), forbiddenResponse.length(),
+         0);
+    close(ClientSocket);
+    return;
+  }
+
   // Construct the absolute file path
   std::string filePath = basePath + requestPath;
 
@@ -422,51 +441,39 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
         LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion, 200,
                    request);
       } else if (S_ISREG(pathStat.st_mode)) {
-        // Check if the file is owned by the process user
-        uid_t processUid = getuid();
-        if (processUid == pathStat.st_uid) {
-          // Serve the file
-          std::ifstream file(filePath, std::ios::binary);
-          if (file) {
-            std::stringstream response;
-            std::stringstream content;
+        // Serve the file
+        std::ifstream file(filePath, std::ios::binary);
+        if (file) {
+          std::stringstream response;
+          std::stringstream content;
 
-            content << file.rdbuf();
-            std::string contentStr = content.str();
+          content << file.rdbuf();
+          std::string contentStr = content.str();
 
-            // Determine the content type
-            std::string contentType = GetMimeType(filePath);
+          // Determine the content type
+          std::string contentType = GetMimeType(filePath);
 
-            response << httpVersion << " 200 OK\r\n";
-            response << "Content-Type: " << contentType << "\r\n";
-            response << "Content-Disposition: inline\r\n"; // Display in browser
-            response << "Content-Length: " << contentStr.size() << "\r\n\r\n";
-            response << contentStr;
+          response << httpVersion << " 200 OK\r\n";
+          response << "Content-Type: " << contentType << "\r\n";
+          response << "Content-Disposition: inline\r\n"; // Display in browser
+          response << "Content-Length: " << contentStr.size() << "\r\n\r\n";
+          response << contentStr;
 
-            std::string responseStr = response.str();
-            send(ClientSocket, responseStr.c_str(), responseStr.size(), 0);
-            LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion,
-                       200, request);
-            LogResponse(responseStr);
-          } else {
-            std::string notFoundResponse =
-                "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n"
-                "<html><body><h1>404 Not Found</h1></body></html>";
-            send(ClientSocket, notFoundResponse.c_str(),
-                 notFoundResponse.length(), 0);
-            LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion,
-                       404, request);
-          }
-          file.close();
-        } else {
-          std::string forbiddenResponse =
-              "HTTP/1.1 403 Forbidden\r\nContent-Type: text/html\r\n\r\n"
-              "<html><body><h1>403 Forbidden</h1></body></html>";
-          send(ClientSocket, forbiddenResponse.c_str(),
-               forbiddenResponse.length(), 0);
+          std::string responseStr = response.str();
+          send(ClientSocket, responseStr.c_str(), responseStr.size(), 0);
           LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion,
-                     403, request);
+                     200, request);
+          LogResponse(responseStr);
+        } else {
+          std::string notFoundResponse =
+              "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n"
+              "<html><body><h1>404 Not Found</h1></body></html>";
+          send(ClientSocket, notFoundResponse.c_str(),
+               notFoundResponse.length(), 0);
+          LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion,
+                     404, request);
         }
+        file.close();
       }
     } else {
       std::string notFoundResponse =

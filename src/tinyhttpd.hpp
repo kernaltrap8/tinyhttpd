@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
-#define VERSION "0.13.0"
+#define VERSION "0.13.1"
 
 constexpr std::string_view help = R"(tinyhttpd - A small HTTP server
 Usage: tinyhttpd -port <port_number> [options]	
@@ -23,6 +23,7 @@ Options:
   -v, --version         Display version information
   -h, --help            Display this help message
   -b, --blacklist       Add a list of comma-seperated paths to a blacklist
+  -r, --rate-limit       Only allow 5 requests per second
   -paths		        Path to serve files from. Defaults to "."
   -port <port_number>   Specify the port number to bind on
 Examples:

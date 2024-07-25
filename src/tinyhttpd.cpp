@@ -32,6 +32,7 @@ namespace tinyhttpd {
 std::string basePath = ".";
 volatile sig_atomic_t exitFlag = 0;
 bool debugMode = false;
+bool enableRateLimit = false;
 const std::string RED = "\033[31m";
 const std::string GREEN = "\033[32m";
 const std::string RESET = "\033[0m";
@@ -457,17 +458,19 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
   inet_ntop(AF_INET, &(addr.sin_addr), clientIp, INET_ADDRSTRLEN);
 
   // Check rate limit
-  if (!CheckRateLimit(clientIp)) {
-    std::string rateLimitResponse =
-        "HTTP/1.1 429 Too Many Requests\r\nContent-Type: text/html\r\n\r\n"
-        "<html><body><h1>429 Too Many Requests</h1><p>You have sent too many "
-        "requests. Please try again later.</p></body></html>";
-    send(ClientSocket, rateLimitResponse.c_str(), rateLimitResponse.length(),
-         0);
-    LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion, 429,
-               request);
-    close(ClientSocket);
-    return;
+  if (enableRateLimit == true) {
+    if (!CheckRateLimit(clientIp)) {
+      std::string rateLimitResponse =
+          "HTTP/1.1 429 Too Many Requests\r\nContent-Type: text/html\r\n\r\n"
+          "<html><body><h1>429 Too Many Requests</h1><p>You have sent too many "
+          "requests. Please try again later.</p></body></html>";
+      send(ClientSocket, rateLimitResponse.c_str(), rateLimitResponse.length(),
+           0);
+      LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion, 429,
+                 request);
+      close(ClientSocket);
+      return;
+    }
   }
 
   // Check if the request path is any of these blacklisted paths
@@ -655,6 +658,10 @@ int main(int argc, char *argv[]) {
 
   if (arguments.count("-blacklist") > 0) {
     tinyhttpd::AddBlacklistedPaths(arguments["-blacklist"]);
+  }
+
+  if (arguments.count("-r") > 0 || arguents.count("--rate-limit")) {
+    tinyhttpd::enableRateLimit = true;
   }
 
   if (arguments.count("path") > 0) {

@@ -13,9 +13,11 @@
 #include <csignal>
 #include <cstring>
 #include <ctime>
+#include <deque>
 #include <dirent.h>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <pwd.h>
 #include <sstream>
 #include <string>
@@ -34,6 +36,9 @@ const std::string RED = "\033[31m";
 const std::string GREEN = "\033[32m";
 const std::string RESET = "\033[0m";
 
+// Define the blacklisted paths
+std::unordered_set<std::string> blacklistedPaths = {};
+
 // Struct to hold data for argument parsing
 struct Argument {
   std::string flag;
@@ -47,6 +52,10 @@ struct FileInfo {
   long long size;
   bool isDirectory;
 };
+// Define a global map for tracking client request timestamps
+std::unordered_map<std::string, std::deque<std::time_t>>
+    clientRequestTimestamps;
+std::mutex rateLimitMutex;
 
 // Function to parse argument data from Argument struct
 std::unordered_map<std::string, std::string> ParseArguments(int argc,
@@ -74,6 +83,14 @@ std::unordered_map<std::string, std::string> ParseArguments(int argc,
   return arguments;
 }
 
+void AddBlacklistedPaths(const std::string &paths) {
+  std::istringstream stream(paths);
+  std::string path;
+  while (std::getline(stream, path, ',')) {
+    blacklistedPaths.insert(path);
+  }
+}
+
 void PrintCurrentOperation(const std::string operation) {
   std::cout << "[" << GREEN << "SERVER" << RESET << "] " << operation
             << std::endl;
@@ -97,6 +114,30 @@ void LogResponse(const std::string &response) {
     std::cerr << "[" << RED << "DEBUG" << RESET << "] Response: " << response
               << std::endl;
   }
+}
+
+bool CheckRateLimit(const std::string &clientIp) {
+  std::lock_guard<std::mutex> lock(rateLimitMutex);
+
+  // Get current time
+  std::time_t currentTime = std::time(nullptr);
+
+  // Get the deque of timestamps for the client IP
+  auto &timestamps = clientRequestTimestamps[clientIp];
+
+  // Remove timestamps older than 1 second
+  while (!timestamps.empty() && currentTime - timestamps.front() > 1) {
+    timestamps.pop_front();
+  }
+
+  // Check if the number of requests exceeds the limit
+  if (timestamps.size() >= 5) {
+    return false; // Rate limit exceeded
+  }
+
+  // Add the current timestamp
+  timestamps.push_back(currentTime);
+  return true; // Rate limit not exceeded
 }
 
 std::string UrlDecode(const std::string &str) {
@@ -399,24 +440,6 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
   // URL-decode the request path
   requestPath = UrlDecode(requestPath);
 
-  // Define the blacklisted paths
-  const std::unordered_set<std::string> blacklistedPaths = {
-      "/bin",   "/boot",       "/dev",       "/etc", "/home", "/lib",
-      "/lib64", "/media",      "/mnt",       "/opt", "/proc", "/root",
-      "/run",   "/sbin",       "/srv",       "/sys", "/tmp",  "/usr",
-      "/var",   "/etc/passwd", "/etc/shadow"};
-
-  // Check if the request path is any of these blacklisted paths
-  if (blacklistedPaths.find(requestPath) != blacklistedPaths.end()) {
-    std::string forbiddenResponse =
-        "HTTP/1.1 403 Forbidden\r\nContent-Type: text/html\r\n\r\n"
-        "<html><body><h1>403 Forbidden</h1><p>Access denied.</p></body></html>";
-    send(ClientSocket, forbiddenResponse.c_str(), forbiddenResponse.length(),
-         0);
-    close(ClientSocket);
-    return;
-  }
-
   // Construct the absolute file path
   std::string filePath = basePath + requestPath;
 
@@ -432,6 +455,33 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
   getpeername(ClientSocket, (struct sockaddr *)&addr, &addrLen);
   char clientIp[INET_ADDRSTRLEN];
   inet_ntop(AF_INET, &(addr.sin_addr), clientIp, INET_ADDRSTRLEN);
+
+  // Check rate limit
+  if (!CheckRateLimit(clientIp)) {
+    std::string rateLimitResponse =
+        "HTTP/1.1 429 Too Many Requests\r\nContent-Type: text/html\r\n\r\n"
+        "<html><body><h1>429 Too Many Requests</h1><p>You have sent too many "
+        "requests. Please try again later.</p></body></html>";
+    send(ClientSocket, rateLimitResponse.c_str(), rateLimitResponse.length(),
+         0);
+    LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion, 429,
+               request);
+    close(ClientSocket);
+    return;
+  }
+
+  // Check if the request path is any of these blacklisted paths
+  if (blacklistedPaths.find(requestPath) != blacklistedPaths.end()) {
+    std::string forbiddenResponse =
+        "HTTP/1.1 403 Forbidden\r\nContent-Type: text/html\r\n\r\n"
+        "<html><body><h1>403 Forbidden</h1><p>Access denied.</p></body></html>";
+    send(ClientSocket, forbiddenResponse.c_str(), forbiddenResponse.length(),
+         0);
+    LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion, 403,
+               request);
+    close(ClientSocket);
+    return;
+  }
 
   if (method == "GET") {
     struct stat pathStat;
@@ -467,7 +517,8 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
         } else {
           std::string notFoundResponse =
               "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n"
-              "<html><body><h1>404 Not Found</h1></body></html>";
+              "<html><body><h1>404 Not Found</h1><p>The requested resource was "
+              "not found on this server.</p></body></html>";
           send(ClientSocket, notFoundResponse.c_str(),
                notFoundResponse.length(), 0);
           LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion,
@@ -478,7 +529,8 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
     } else {
       std::string notFoundResponse =
           "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n"
-          "<html><body><h1>404 Not Found</h1></body></html>";
+          "<html><body><h1>404 Not Found</h1><p>The requested resource was "
+          "not found on this server.</p></body></html>";
       send(ClientSocket, notFoundResponse.c_str(), notFoundResponse.length(),
            0);
       LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion, 404,
@@ -526,16 +578,24 @@ int BindToClientSocket(int SocketToBind) {
     int ClientSocket = accept(ServerSocket, nullptr, nullptr);
     if (ClientSocket < 0) {
       std::cerr << "Client socket accept failed.\n";
-      return 1;
+      continue; // Continue accepting other connections
     }
 
-    HttpdServerThread_t.emplace_back(HandleClientRequest, ClientSocket,
-                                     SocketToBind);
-  }
+    HttpdServerThread_t.emplace_back([ClientSocket, SocketToBind]() {
+      HandleClientRequest(ClientSocket, SocketToBind);
+      close(ClientSocket); // Ensure socket is closed
+    });
 
-  // Join all threads before exiting
-  for (auto &t : HttpdServerThread_t) {
-    t.join();
+    // Join all threads to ensure they finish before the server shuts down
+    for (auto it = HttpdServerThread_t.begin();
+         it != HttpdServerThread_t.end();) {
+      if (it->joinable()) {
+        it->join();
+        it = HttpdServerThread_t.erase(it); // Remove completed thread
+      } else {
+        ++it;
+      }
+    }
   }
 
   // Close server socket before exiting
@@ -571,7 +631,7 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  if (arguments.count("v") > 0 || arguments.count("version") > 0) {
+  if (arguments.count("v") > 0 || arguments.count("-version") > 0) {
     std::cout << "tinyhttpd v" << VERSION << std::endl;
     exit(0);
   }
@@ -581,8 +641,20 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  if (arguments.count("d") > 0 || arguments.count("debug") > 0) {
+  if (arguments.count("d") > 0) {
     tinyhttpd::debugMode = true;
+  }
+
+  if (arguments.count("-debug") > 0) {
+    tinyhttpd::debugMode = true;
+  }
+
+  if (arguments.count("b") > 0) {
+    tinyhttpd::AddBlacklistedPaths(arguments["b"]);
+  }
+
+  if (arguments.count("-blacklist") > 0) {
+    tinyhttpd::AddBlacklistedPaths(arguments["-blacklist"]);
   }
 
   if (arguments.count("path") > 0) {

@@ -421,6 +421,22 @@ std::string GetMimeType(const std::string &filePath) {
   return "application/octet-stream";
 }
 
+std::unordered_map<std::string, std::string>
+ParseHeaders(std::istringstream &requestStream) {
+  std::unordered_map<std::string, std::string> headers;
+  std::string line;
+  while (std::getline(requestStream, line) && line != "\r") {
+    auto colonPos = line.find(':');
+    if (colonPos != std::string::npos) {
+      std::string headerName = line.substr(0, colonPos);
+      std::string headerValue = line.substr(colonPos + 2); // Skip the ": " part
+      headerValue.pop_back(); // Remove the '\r' character
+      headers[headerName] = headerValue;
+    }
+  }
+  return headers;
+}
+
 void HandleClientRequest(int ClientSocket, int portNumber) {
   char buffer[4096] = {0};
   int valread = read(ClientSocket, buffer, 4096);
@@ -444,18 +460,31 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
   // Construct the absolute file path
   std::string filePath = basePath + requestPath;
 
+  // Parse headers
+  std::unordered_map<std::string, std::string> headers =
+      ParseHeaders(requestStream);
+
+  // Extract client IP from headers
+  std::string clientIp = headers["X-Forwarded-For"];
+  if (clientIp.empty()) {
+    clientIp = headers["X-Real-IP"];
+  }
+
+  // If no IP header found, fall back to getpeername
+  if (clientIp.empty()) {
+    struct sockaddr_in addr;
+    socklen_t addrLen = sizeof(addr);
+    getpeername(ClientSocket, (struct sockaddr *)&addr, &addrLen);
+    char clientIpBuffer[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(addr.sin_addr), clientIpBuffer, INET_ADDRSTRLEN);
+    clientIp = clientIpBuffer;
+  }
+
   // Get the current time
   std::time_t currentTime = std::time(nullptr);
   std::tm *timeInfo = std::localtime(&currentTime);
   char timeBuffer[80];
   std::strftime(timeBuffer, 80, "%d/%b/%Y:%H:%M:%S %z", timeInfo);
-
-  // Get the client's IP address
-  struct sockaddr_in addr;
-  socklen_t addrLen = sizeof(addr);
-  getpeername(ClientSocket, (struct sockaddr *)&addr, &addrLen);
-  char clientIp[INET_ADDRSTRLEN];
-  inet_ntop(AF_INET, &(addr.sin_addr), clientIp, INET_ADDRSTRLEN);
 
   // Check rate limit
   if (enableRateLimit == true) {

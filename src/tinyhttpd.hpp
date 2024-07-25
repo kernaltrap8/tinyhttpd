@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
-#define VERSION "0.13.1a"
+#define VERSION "0.13.2"
 
 constexpr std::string_view help = R"(tinyhttpd - A small HTTP server
 Usage: tinyhttpd -port <port_number> [options]	

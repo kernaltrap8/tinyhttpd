@@ -689,7 +689,7 @@ int main(int argc, char *argv[]) {
     tinyhttpd::AddBlacklistedPaths(arguments["-blacklist"]);
   }
 
-  if (arguments.count("-r") > 0 || arguments.count("--rate-limit")) {
+  if (arguments.count("r") > 0 || arguments.count("-rate-limit")) {
     tinyhttpd::enableRateLimit = true;
   }
 

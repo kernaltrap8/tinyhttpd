@@ -33,6 +33,7 @@ std::string basePath = ".";
 volatile sig_atomic_t exitFlag = 0;
 bool debugMode = false;
 bool enableRateLimit = false;
+long unsigned int rateLimit = 30;
 const std::string RED = "\033[31m";
 const std::string GREEN = "\033[32m";
 const std::string RESET = "\033[0m";
@@ -53,6 +54,7 @@ struct FileInfo {
   long long size;
   bool isDirectory;
 };
+
 // Define a global map for tracking client request timestamps
 std::unordered_map<std::string, std::deque<std::time_t>>
     clientRequestTimestamps;
@@ -132,7 +134,7 @@ bool CheckRateLimit(const std::string &clientIp) {
   }
 
   // Check if the number of requests exceeds the limit
-  if (timestamps.size() >= 5) {
+  if (timestamps.size() >= rateLimit) {
     return false; // Rate limit exceeded
   }
 
@@ -193,8 +195,9 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
     std::string responseHeader =
         "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " +
         std::to_string(responseStr.length()) + "\r\n\r\n";
-    send(ClientSocket, responseHeader.c_str(), responseHeader.length(), 0);
-    send(ClientSocket, responseStr.c_str(), responseStr.length(), 0);
+    send(ClientSocket, responseHeader.c_str(), responseHeader.length(),
+         MSG_NOSIGNAL);
+    send(ClientSocket, responseStr.c_str(), responseStr.length(), MSG_NOSIGNAL);
     close(ClientSocket);
 
     LogResponse(responseStr);
@@ -377,8 +380,9 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
   std::string responseHeader =
       "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " +
       std::to_string(responseStr.length()) + "\r\n\r\n";
-  send(ClientSocket, responseHeader.c_str(), responseHeader.length(), 0);
-  send(ClientSocket, responseStr.c_str(), responseStr.length(), 0);
+  send(ClientSocket, responseHeader.c_str(), responseHeader.length(),
+       MSG_NOSIGNAL);
+  send(ClientSocket, responseStr.c_str(), responseStr.length(), MSG_NOSIGNAL);
   close(ClientSocket);
 
   LogResponse(responseStr);
@@ -494,7 +498,7 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
           "<html><body><h1>429 Too Many Requests</h1><p>You have sent too many "
           "requests. Please try again later.</p></body></html>";
       send(ClientSocket, rateLimitResponse.c_str(), rateLimitResponse.length(),
-           0);
+           MSG_NOSIGNAL);
       LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion, 429,
                  request);
       close(ClientSocket);
@@ -508,7 +512,7 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
         "HTTP/1.1 403 Forbidden\r\nContent-Type: text/html\r\n\r\n"
         "<html><body><h1>403 Forbidden</h1><p>Access denied.</p></body></html>";
     send(ClientSocket, forbiddenResponse.c_str(), forbiddenResponse.length(),
-         0);
+         MSG_NOSIGNAL);
     LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion, 403,
                request);
     close(ClientSocket);
@@ -542,7 +546,8 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
           response << contentStr;
 
           std::string responseStr = response.str();
-          send(ClientSocket, responseStr.c_str(), responseStr.size(), 0);
+          send(ClientSocket, responseStr.c_str(), responseStr.size(),
+               MSG_NOSIGNAL);
           LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion,
                      200, request);
           LogResponse(responseStr);
@@ -552,7 +557,7 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
               "<html><body><h1>404 Not Found</h1><p>The requested resource was "
               "not found on this server.</p></body></html>";
           send(ClientSocket, notFoundResponse.c_str(),
-               notFoundResponse.length(), 0);
+               notFoundResponse.length(), MSG_NOSIGNAL);
           LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion,
                      404, request);
         }
@@ -564,7 +569,7 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
           "<html><body><h1>404 Not Found</h1><p>The requested resource was "
           "not found on this server.</p></body></html>";
       send(ClientSocket, notFoundResponse.c_str(), notFoundResponse.length(),
-           0);
+           MSG_NOSIGNAL);
       LogRequest(clientIp, timeBuffer, method, requestPath, httpVersion, 404,
                  request);
     }
@@ -689,8 +694,21 @@ int main(int argc, char *argv[]) {
     tinyhttpd::AddBlacklistedPaths(arguments["-blacklist"]);
   }
 
-  if (arguments.count("r") > 0 || arguments.count("-rate-limit")) {
+  if (arguments.count("r") == 0 || arguments.count("-rate-limit") == 0) {
     tinyhttpd::enableRateLimit = true;
+  }
+
+  if (arguments.count("r") > 0) {
+    tinyhttpd::enableRateLimit = true;
+    unsigned long limit = std::stoul(arguments["r"].c_str());
+    tinyhttpd::rateLimit = limit;
+    std::cout << "Rate limit is: " << limit << std::endl;
+  }
+
+  if (arguments.count("-rate-limit") > 0) {
+    tinyhttpd::enableRateLimit = true;
+    unsigned long limit = std::stoul(arguments["-rate-limit"].c_str());
+    tinyhttpd::rateLimit = limit;
   }
 
   if (arguments.count("path") > 0) {
@@ -701,6 +719,8 @@ int main(int argc, char *argv[]) {
 
   // Register signal SIGINT and signal handler
   signal(SIGINT, signalHandler);
+
+  // Ignore SIGPIPE and continue with execution
 
   std::string StartingServerString =
       "Starting tinyhttpd server on port " + std::to_string(portNumber);

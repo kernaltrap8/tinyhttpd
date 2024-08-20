@@ -9,9 +9,6 @@
 
 #include "tinyhttpd.hpp"
 #include <algorithm>
-#if defined(__linux__) || defined(__FreeBSD__)
-#include <arpa/inet.h>
-#endif
 #include <csignal>
 #include <cstring>
 #include <ctime>
@@ -20,7 +17,6 @@
 #include <fstream>
 #include <iostream>
 #include <mutex>
-#include <pwd.h>
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
@@ -29,8 +25,18 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#ifdef __WIN32__
-#include <winsock.h>
+#ifdef __MINGW32__
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#endif
+
+#ifdef __MINGW32__
+/* Winsock workaround ; not really good one */
+#define read(s,b,n) recv(s,b,n,0)
+#define write(s,b,n) send(s,b,n,0)
+#define MSG_NOSIGNAL 0
 #endif
 
 namespace tinyhttpd {
@@ -584,15 +590,26 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
 }
 
 int BindToClientSocket(int SocketToBind) {
+#ifdef __MINGW32__
+  WSADATA wsa;
+  WSAStartup(MAKEWORD(2, 0), &wsa);
+#endif
   int ServerSocket = socket(AF_INET, SOCK_STREAM, 0);
-  if (ServerSocket == 0) {
+#ifdef __MINGW32__
+  if (ServerSocket == INVALID_SOCKET) {
     std::cerr << "Failed to initialize socket. Exiting.\n";
     return 1;
   }
+#else
+  if (ServerSocket < 0) {
+    std::cerr << "Failed to initialize socket. Exiting.\n";
+    return 1;
+  }
+#endif
 
   // Set socket option to reuse address
   int opt = 1;
-  if (setsockopt(ServerSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) <
+  if (setsockopt(ServerSocket, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt)) <
       0) {
     std::cerr << "setsockopt(SO_REUSEADDR) failed.\n";
     return 1;

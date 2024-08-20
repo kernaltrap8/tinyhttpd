@@ -9,7 +9,9 @@
 
 #include "tinyhttpd.hpp"
 #include <algorithm>
+#if defined(__linux__) || defined(__FreeBSD__)
 #include <arpa/inet.h>
+#endif
 #include <csignal>
 #include <cstring>
 #include <ctime>
@@ -27,6 +29,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#ifdef __WIN32__
+#include <winsock.h>
+#endif
 
 namespace tinyhttpd {
 std::string basePath = ".";

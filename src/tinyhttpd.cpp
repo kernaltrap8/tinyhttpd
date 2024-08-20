@@ -28,6 +28,7 @@
 #ifdef __MINGW32__
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
 #else
 #include <arpa/inet.h>
 #endif
@@ -677,6 +678,14 @@ void signalHandler(int signum) {
 }
 
 int main(int argc, char *argv[]) {
+#ifdef __MINGW32__
+  HANDLE winstdout = GetStdHandle(STD_OUTPUT_HANDLE);
+  DWORD mode = 0;
+  GetConsoleMode(winstdout, &mode);
+  const DWORD origmode = mode;
+  mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+  SetConsoleMode(winstdout, mode);
+#endif
 
   std::unordered_map<std::string, std::string> arguments =
       tinyhttpd::ParseArguments(argc, argv);

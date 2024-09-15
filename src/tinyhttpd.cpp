@@ -26,17 +26,17 @@
 #include <unordered_set>
 #include <vector>
 #ifdef __MINGW32__
+#include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <windows.h>
 #else
 #include <arpa/inet.h>
 #endif
 
 #ifdef __MINGW32__
 /* Winsock workaround ; not really good one */
-#define read(s,b,n) recv(s,b,n,0)
-#define write(s,b,n) send(s,b,n,0)
+#define read(s, b, n) recv(s, b, n, 0)
+#define write(s, b, n) send(s, b, n, 0)
 #define MSG_NOSIGNAL 0
 #endif
 
@@ -45,7 +45,7 @@ std::string basePath = ".";
 volatile sig_atomic_t exitFlag = 0;
 bool debugMode = false;
 bool enableRateLimit = false;
-long unsigned int rateLimit = 30;
+long unsigned int rateLimit = 100;
 const std::string RED = "\033[31m";
 const std::string GREEN = "\033[32m";
 const std::string RESET = "\033[0m";
@@ -116,7 +116,7 @@ void LogRequest(const std::string &ipAddress, const std::string &requestTime,
                 const std::string &httpVersion, int statusCode,
                 const std::string &request) {
   std::cout << ipAddress << " - - [" << requestTime << "] \"" << method << " "
-            << requestPath << " " << httpVersion << "\" " << statusCode
+            << requestPath << "\" " << httpVersion << " " << statusCode
             << std::endl;
   if (debugMode) {
     std::cerr << "[" << RED << "DEBUG" << RESET << "] Request: " << request
@@ -420,18 +420,32 @@ std::string GetLinuxDistribution() {
 }
 
 std::string GetMimeType(const std::string &filePath) {
-  std::string extension = filePath.substr(filePath.find_last_of('.') + 1);
-  std::unordered_map<std::string, std::string> mimeTypes = {
+  static const std::unordered_map<std::string, std::string> mimeTypes = {
       {"html", "text/html"},        {"htm", "text/html"},
       {"css", "text/css"},          {"js", "application/javascript"},
       {"json", "application/json"}, {"txt", "text/plain"},
       {"md", "text/markdown"},      {"xml", "application/xml"},
       {"csv", "text/csv"},          {"svg", "image/svg+xml"},
-      {"yml", "text/yml"},
-  };
+      {"yml", "text/yml"},          {"wasm", "application/wasm"},
+      {"jpg", "image/jpeg"},        {"jpeg", "image/jpeg"},
+      {"png", "image/png"},         {"gif", "image/gif"},
+      {"bmp", "image/bmp"},         {"ico", "image/x-icon"},
+      {"tiff", "image/tiff"},       {"webp", "image/webp"},
+      {"mp3", "audio/mpeg"},        {"wav", "audio/wav"},
+      {"ogg", "audio/ogg"},         {"flac", "audio/flac"},
+      {"mp4", "video/mp4"},         {"webm", "video/webm"},
+      {"ogv", "video/ogg"},         {"avi", "video/x-msvideo"},
+      {"pdf", "application/pdf"},   {"doc", "application/msword"}};
 
-  if (mimeTypes.find(extension) != mimeTypes.end()) {
-    return mimeTypes[extension];
+  size_t dotPos = filePath.find_last_of('.');
+  if (dotPos == std::string::npos) {
+    return "application/octet-stream";
+  }
+
+  std::string extension = filePath.substr(dotPos + 1);
+  auto it = mimeTypes.find(extension);
+  if (it != mimeTypes.end()) {
+    return it->second;
   }
 
   return "application/octet-stream";
@@ -610,8 +624,8 @@ int BindToClientSocket(int SocketToBind) {
 
   // Set socket option to reuse address
   int opt = 1;
-  if (setsockopt(ServerSocket, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt)) <
-      0) {
+  if (setsockopt(ServerSocket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt,
+                 sizeof(opt)) < 0) {
     std::cerr << "setsockopt(SO_REUSEADDR) failed.\n";
     return 1;
   }

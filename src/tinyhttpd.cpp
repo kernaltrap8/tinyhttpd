@@ -424,7 +424,7 @@ std::string GetMimeType(const std::string &filePath) {
       {"html", "text/html"},
       {"htm", "text/html"},
       {"css", "text/css"},
-      {"js", "application/javascript"},
+      {"js", "text/javascript"},
       {"json", "application/json"},
       {"txt", "text/plain"},
       {"md", "text/markdown"},

@@ -158,18 +158,21 @@ bool CheckRateLimit(const std::string &clientIp) {
 std::string UrlDecode(const std::string &str) {
   std::string result;
   char decodeBuf[3] = {0};
-  for (size_t i = 0; i < str.length(); ++i) {
-    if (str[i] == '%') {
-      if (i + 2 < str.length()) {
-        decodeBuf[0] = str[i + 1];
-        decodeBuf[1] = str[i + 2];
-        result += static_cast<char>(strtol(decodeBuf, nullptr, 16));
-        i += 2;
-      }
-    } else if (str[i] == '+') {
-      result += ' ';
-    } else {
-      result += str[i];
+  for (std::string::size_type i = 0; i < str.length(); ++i) {
+    switch (str[i]) {
+      case '%':
+        if (i + 2 < str.length()) {
+          decodeBuf[0] = str[i + 1];
+          decodeBuf[1] = str[i + 2];
+          result += static_cast<char>(strtol(decodeBuf, nullptr, 16));
+          i += 2;
+        }
+        break;
+      case '+':
+        result += ' ';
+        break;
+      default:
+        result += str[i];
     }
   }
   return result;

@@ -219,7 +219,8 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
   std::stringstream response;
   response << "\r\n";
   response
-      << "<html><head>"
+      << "<!DOCTYPE html>"
+         "<html xmlns='http://www.w3.org/1999/xhtml'><head>"
          "<title>Directory Listing</title></head>"
          "<style>"
          "html, body { height: 100%; margin: 0; }"

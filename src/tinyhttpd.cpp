@@ -42,7 +42,7 @@
 
 namespace tinyhttpd {
 std::string basePath = ".";
-volatile sig_atomic_t exitFlag = 0;
+volatile std::sig_atomic_t exitFlag = 0;
 bool debugMode = false;
 bool enableRateLimit = false;
 long unsigned int rateLimit = 100;
@@ -251,7 +251,7 @@ void ServeDirectoryListing(int ClientSocket, const std::string &directoryPath,
     if (parentPath.back() == '/') {
       parentPath.pop_back();
     }
-    size_t pos = parentPath.find_last_of('/');
+    std::size_t pos = parentPath.find_last_of('/');
     if (pos != std::string::npos) {
       parentPath = parentPath.substr(0, pos);
     }
@@ -471,7 +471,7 @@ std::string GetMimeType(const std::string &filePath) {
       {"woff", "font/woff"},
       {"woff2", "font/woff2"}};
 
-  size_t dotPos = filePath.find_last_of('.');
+  std::size_t dotPos = filePath.find_last_of('.');
   if (dotPos == std::string::npos) {
     return "application/octet-stream";
   }
@@ -538,7 +538,7 @@ void HandleClientRequest(int ClientSocket, int portNumber) {
   if (clientIp.empty()) {
     struct sockaddr_in addr;
     socklen_t addrLen = sizeof(addr);
-    getpeername(ClientSocket, (struct sockaddr *)&addr, &addrLen);
+    getpeername(ClientSocket, reinterpret_cast<struct sockaddr *>(&addr), &addrLen);
     char clientIpBuffer[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &(addr.sin_addr), clientIpBuffer, INET_ADDRSTRLEN);
     clientIp = clientIpBuffer;
@@ -722,7 +722,7 @@ void signalHandler(int signum) {
   tinyhttpd::PrintCurrentOperation(ExitingServerString);
   // Set exit flag to terminate server gracefully
   tinyhttpd::exitFlag = 1;
-  exit(1);
+  std::exit(1);
 }
 
 int main(int argc, char *argv[]) {
@@ -739,22 +739,22 @@ int main(int argc, char *argv[]) {
       tinyhttpd::ParseArguments(argc, argv);
   if (arguments.count("h") > 0 || arguments.count("help") > 0) {
     std::cout << help;
-    exit(0);
+    std::exit(0);
   }
 
   if (argc < 2) {
     std::cerr << "Please specify port to bind on.\n";
-    exit(1);
+    std::exit(1);
   }
 
   if (arguments.count("v") > 0 || arguments.count("-version") > 0) {
     std::cout << "tinyhttpd v" << VERSION << std::endl;
-    exit(0);
+    std::exit(0);
   }
 
   if (arguments.count("port") == 0) {
     std::cerr << "Please specify port to bind on using -port <port_number>\n";
-    exit(1);
+    std::exit(1);
   }
 
   if (arguments.count("d") > 0) {
@@ -797,7 +797,7 @@ int main(int argc, char *argv[]) {
   int portNumber = std::atoi(arguments["port"].c_str());
 
   // Register signal SIGINT and signal handler
-  signal(SIGINT, signalHandler);
+  std::signal(SIGINT, signalHandler);
 
   // Ignore SIGPIPE and continue with execution
 
